@@ -261,9 +261,9 @@ rnGreName (NormalGreName n) = NormalGreName <$> rnIfaceGlobal n
 rnGreName (FieldGreName fl) = FieldGreName  <$> rnFieldLabel fl
 
 rnFieldLabel :: Rename FieldLabel
-rnFieldLabel (FieldLabel l b sel) = do
+rnFieldLabel (FieldLabel l b has_sel sel) = do
     sel' <- rnIfaceGlobal sel
-    return (FieldLabel l b sel')
+    return (FieldLabel l b has_sel sel')
 
 
 
