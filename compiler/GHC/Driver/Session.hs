@@ -3225,6 +3225,7 @@ wWarningFlagsDeps = [
 -- Please keep the list of flags below sorted alphabetically
   flagSpec "alternative-layout-rule-transitional"
                                       Opt_WarnAlternativeLayoutRuleTransitional,
+  flagSpec "ambiguous-fields"            Opt_WarnAmbiguousFields,
   depFlagSpec "auto-orphans"             Opt_WarnAutoOrphans
     "it has no effect",
   flagSpec "cpp-undef"                   Opt_WarnCPPUndef,
@@ -4066,6 +4067,7 @@ standardWarnings -- see Note [Documenting warning flags]
         Opt_WarnDerivingDefaults,
         Opt_WarnOverflowedLiterals,
         Opt_WarnEmptyEnumerations,
+        Opt_WarnAmbiguousFields,
         Opt_WarnMissingFields,
         Opt_WarnMissingMethods,
         Opt_WarnWrongDoBind,

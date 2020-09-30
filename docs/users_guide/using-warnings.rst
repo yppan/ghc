@@ -29,6 +29,7 @@ generally likely to indicate bugs in your program. These are:
     * :ghc-flag:`-Wderiving-defaults`
     * :ghc-flag:`-Woverflowed-literals`
     * :ghc-flag:`-Wempty-enumerations`
+    * :ghc-flag:`-Wambiguous-fields`
     * :ghc-flag:`-Wmissing-fields`
     * :ghc-flag:`-Wmissing-methods`
     * :ghc-flag:`-Wwrong-do-bind`
@@ -1821,6 +1822,22 @@ of ``-W(no-)*``.
 
     This warning informs you about discarded documentation comments.
     It has no effect when :ghc-flag:`-haddock` is disabled.
+
+.. ghc-flag:: -Wambiguous-fields
+    :shortdesc: warn about ambiguous field selectors or updates
+    :type: dynamic
+    :category:
+
+    :since: 9.2
+
+    When :extension:`DuplicateRecordFields` is enabled, the option
+    :ghc-flag:`-Wambiguous-fields` warns about occurrences of fields in
+    selectors or updates that depend on the deprecated mechanism for
+    type-directed disambiguation.  This mechanism will be removed in a future
+    GHC release, at which point these occurrences will be rejected as ambiguous.
+
+    This warning has no effect when :extension:`DuplicateRecordFields` is
+    disabled.
 
 If you're feeling really paranoid, the :ghc-flag:`-dcore-lint` option is a good choice.
 It turns on heavyweight intra-pass sanity-checking within GHC. (It checks GHC's
