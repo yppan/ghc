@@ -22,7 +22,7 @@ import GHC.Tc.Utils.TcType
 import GHC.Core.Type
 import GHC.Core.DataCon
 import GHC.Types.Name
-import GHC.Types.Name.Reader ( pprNameProvenance , GlobalRdrElt (..), globalRdrEnvElts )
+import GHC.Types.Name.Reader ( pprNameProvenance , GlobalRdrElt (..), globalRdrEnvElts, gre_name )
 import GHC.Builtin.Names ( gHC_ERR )
 import GHC.Types.Id
 import GHC.Types.Var.Set
@@ -784,7 +784,7 @@ tcFilterHoleFits limit typed_hole ht@(hole_ty, _) candidates =
 #if __GLASGOW_HASKELL__ <= 810
                            IdHFCand id -> idName id
 #endif
-                           GreHFCand gre -> gre_name gre
+                           GreHFCand gre -> gre_name gre -- AMG TODO dubious
                            NameHFCand name -> name
           discard_it = go subs seen maxleft ty elts
           keep_it eid eid_ty wrp ms = go (fit:subs) (extendVarSet seen eid)

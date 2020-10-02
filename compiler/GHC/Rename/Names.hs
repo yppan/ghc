@@ -84,7 +84,7 @@ import GHC.Data.FastString
 import GHC.Data.FastString.Env
 
 import Control.Monad
-import Data.Either      ( partitionEithers, isRight, rights )
+import Data.Either      ( partitionEithers )
 import Data.Map         ( Map )
 import qualified Data.Map as Map
 import Data.Ord         ( comparing )
@@ -1037,6 +1037,9 @@ filterImports iface decl_spec (Just (want_hiding, L l import_items))
                           Avail {}                     -- e.g. f(..)
                             -> [DodgyImport $ ieWrappedName tc]
 
+                          AvailFL {}                   -- e.g. f(..)
+                            -> [DodgyImport $ ieWrappedName tc]
+
                           AvailTC _ subs fs
                             | null (drop 1 subs) && null fs -- e.g. T(..) where T is a synonym
                             -> [DodgyImport $ ieWrappedName tc]
@@ -1050,6 +1053,7 @@ filterImports iface decl_spec (Just (want_hiding, L l import_items))
                 renamed_ie = IEThingAll noExtField (L l (replaceWrappedName tc name))
                 sub_avails = case avail of
                                Avail {}              -> []
+                               AvailFL {}            -> []
                                AvailTC name2 subs fs -> [(renamed_ie, AvailTC name2 (subs \\ [name]) fs)]
             case mb_parent of
               Nothing     -> return ([(renamed_ie, avail)], warns)
@@ -1081,6 +1085,7 @@ filterImports iface decl_spec (Just (want_hiding, L l import_items))
            let (ns,subflds) = case avail of
                                 AvailTC _ ns' subflds' -> (ns',subflds')
                                 Avail _                -> panic "filterImports"
+                                AvailFL {}             -> pprPanic "filterImports" (ppr avail)
 
            -- Look up the children in the sub-names of the parent
            let subnames = case ns of   -- The tc is first in ns,
@@ -1089,7 +1094,7 @@ filterImports iface decl_spec (Just (want_hiding, L l import_items))
                                        -- GHC.Types.Avail
                             (n1:ns1) | n1 == name -> ns1
                                      | otherwise  -> ns
-           case lookupChildren (map Left subnames ++ map Right subflds) rdr_ns of
+           case lookupChildren (map ChildName subnames ++ map ChildField subflds) rdr_ns of
 
              Failed rdrs -> failLookupWith (BadImport (IEThingWith xt ltc wc rdrs []))
                                 -- We are trying to import T( a,b,c,d ), and failed
@@ -1201,14 +1206,13 @@ mkChildEnv :: [GlobalRdrElt] -> NameEnv [GlobalRdrElt]
 mkChildEnv gres = foldr add emptyNameEnv gres
   where
     add gre env = case gre_par gre of
-        FldParent p _  -> extendNameEnv_Acc (:) Utils.singleton env p gre
         ParentIs  p    -> extendNameEnv_Acc (:) Utils.singleton env p gre
         NoParent       -> env
 
 findChildren :: NameEnv [a] -> Name -> [a]
 findChildren env n = lookupNameEnv env n `orElse` []
 
-lookupChildren :: [Either Name FieldLabel] -> [LIEWrappedName RdrName]
+lookupChildren :: [Child] -> [LIEWrappedName RdrName]
                -> MaybeErr [LIEWrappedName RdrName]   -- The ones for which the lookup failed
                            ([Located Name], [Located FieldLabel])
 -- (lookupChildren all_kids rdr_items) maps each rdr_item to its
@@ -1233,13 +1237,16 @@ lookupChildren all_kids rdr_items
 
     doOne item@(L l r)
        = case (lookupFsEnv kid_env . occNameFS . rdrNameOcc . ieWrappedName) r of
-           Just [Left n]            -> Succeeded (Left (L l n))
-           Just rs | all isRight rs -> Succeeded (Right (map (L l) (rights rs)))
-           _                        -> Failed    item
+           Just [ChildName n]                       -> Succeeded (Left (L l n))
+           Just rs | Just fs <- traverse toField rs -> Succeeded (Right (map (L l) fs))
+           _                                        -> Failed    item
+
+    toField (ChildField fl) = Just fl
+    toField (ChildName {})  = Nothing
 
     -- See Note [Children for duplicate record fields]
     kid_env = extendFsEnvList_C (++) emptyFsEnv
-              [(either (occNameFS . nameOccName) flLabel x, [x]) | x <- all_kids]
+              [(occNameFS (occName x), [x]) | x <- all_kids]
 
 
 
@@ -1274,11 +1281,13 @@ reportUnusedNames gbl_env hsc_src
     -- This is done in mkExports too; duplicated work
 
     gre_is_used :: NameSet -> GlobalRdrElt -> Bool
-    gre_is_used used_names (GRE {gre_name = name})
+    gre_is_used used_names gre0
         = name `elemNameSet` used_names
           || any (\ gre -> gre_name gre `elemNameSet` used_names) (findChildren kids_env name)
                 -- A use of C implies a use of T,
                 -- if C was brought into scope by T(..) or T(C)
+      where
+        name = gre_name gre0
 
     -- Filter out the ones that are
     --  (a) defined in this module, and
@@ -1501,7 +1510,7 @@ mkImportMap gres
           best_imp_spec = bestImport imp_specs
           add _ gres = gre : gres
 
-warnUnusedImport :: WarningFlag -> NameEnv (FieldLabelString, Name)
+warnUnusedImport :: WarningFlag -> NameEnv (FieldLabelString, Parent)
                  -> ImportDeclUsage -> RnM ()
 warnUnusedImport flag fld_env (L loc decl, used, unused)
 
@@ -1553,8 +1562,9 @@ warnUnusedImport flag fld_env (L loc decl, used, unused)
     -- to improve the consistent for ambiguous/unambiguous identifiers.
     -- See trac#14881.
     ppr_possible_field n = case lookupNameEnv fld_env n of
-                               Just (fld, p) -> pprNameUnqualified p <> parens (ppr fld)
-                               Nothing  -> pprNameUnqualified n
+                               Just (fld, ParentIs p) -> pprNameUnqualified p <> parens (ppr fld)
+                               Just (fld, NoParent)   -> ppr fld
+                               Nothing                -> pprNameUnqualified n
 
     -- Print unused names in a deterministic (lexicographic) order
     sort_unused :: SDoc
@@ -1608,6 +1618,8 @@ getMinimalImports = fmap combine . mapM mk_minimal
     -- to say "T(A,B,C)".  So we have to find out what the module exports.
     to_ie _ (Avail n)
        = [IEVar noExtField (to_ie_post_rn $ noLoc n)]
+    to_ie _ (AvailFL fl)
+       = [IEVar noExtField (to_ie_post_rn $ noLoc (flSelector fl))] -- AMG TODO Probably wrong
     to_ie _ (AvailTC n [m] [])
        | n==m = [IEThingAbs noExtField (to_ie_post_rn $ noLoc n)]
     to_ie iface (AvailTC n ns fs)

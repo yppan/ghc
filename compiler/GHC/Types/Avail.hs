@@ -54,6 +54,10 @@ data AvailInfo
   -- | An ordinary identifier in scope
   = Avail Name
 
+  -- | A field label in scope, without a parent type (see
+  -- Note [Representing fields in AvailInfo]).
+  | AvailFL FieldLabel
+
   -- | A type or class in scope
   --
   -- The __AvailTC Invariant__: If the type or class is itself to be in scope,
@@ -126,12 +130,17 @@ modules.
 -- | Compare lexicographically
 stableAvailCmp :: AvailInfo -> AvailInfo -> Ordering
 stableAvailCmp (Avail n1)       (Avail n2)   = n1 `stableNameCmp` n2
+stableAvailCmp (Avail {})         (AvailFL {})   = LT
 stableAvailCmp (Avail {})         (AvailTC {})   = LT
+stableAvailCmp (AvailFL {})       (Avail {})         = GT
+stableAvailCmp (AvailFL f)        (AvailFL g)        = flSelector f `stableNameCmp` flSelector g
+stableAvailCmp (AvailFL {})       (AvailTC {})       = LT
 stableAvailCmp (AvailTC n ns nfs) (AvailTC m ms mfs) =
     (n `stableNameCmp` m) `thenCmp`
     (cmpList stableNameCmp ns ms) `thenCmp`
     (cmpList (stableNameCmp `on` flSelector) nfs mfs)
 stableAvailCmp (AvailTC {})       (Avail {})     = GT
+stableAvailCmp (AvailTC {})       (AvailFL {})   = GT
 
 avail :: Name -> AvailInfo
 avail n = Avail n
@@ -156,27 +165,32 @@ availsToNameEnv avails = foldr add emptyNameEnv avails
 -- of type or class brought into scope by the 'GenAvailInfo'
 availName :: AvailInfo -> Name
 availName (Avail n)     = n
+availName (AvailFL f)     = flSelector f -- AMG TODO: dubious
 availName (AvailTC n _ _) = n
 
 -- | All names made available by the availability information (excluding overloaded selectors)
 availNames :: AvailInfo -> [Name]
 availNames (Avail n)         = [n]
+availNames (AvailFL f)       = [ flSelector f | not (flIsOverloaded f) ]
 availNames (AvailTC _ ns fs) = ns ++ [ flSelector f | f <- fs, not (flIsOverloaded f) ]
 
 -- | All names made available by the availability information (including overloaded selectors)
 availNamesWithSelectors :: AvailInfo -> [Name]
 availNamesWithSelectors (Avail n)         = [n]
+availNamesWithSelectors (AvailFL fl)      = [flSelector fl]
 availNamesWithSelectors (AvailTC _ ns fs) = ns ++ map flSelector fs
 
 -- | Names for non-fields made available by the availability information
 availNonFldNames :: AvailInfo -> [Name]
 availNonFldNames (Avail n)        = [n]
+availNonFldNames (AvailFL {})     = []
 availNonFldNames (AvailTC _ ns _) = ns
 
 -- | Fields made available by the availability information
 availFlds :: AvailInfo -> [FieldLabel]
+availFlds (Avail {})       = []
+availFlds (AvailFL f)      = [f]
 availFlds (AvailTC _ _ fs) = fs
-availFlds _                = []
 
 availsNamesWithOccs :: [AvailInfo] -> [(Name, OccName)]
 availsNamesWithOccs = concatMap availNamesWithOccs
@@ -191,6 +205,7 @@ availsNamesWithOccs = concatMap availNamesWithOccs
 -- See Note [Representing fields in AvailInfo].
 availNamesWithOccs :: AvailInfo -> [(Name, OccName)]
 availNamesWithOccs (Avail n) = [(n, nameOccName n)]
+availNamesWithOccs (AvailFL fl) = [(flSelector fl, mkVarOccFS (flLabel fl))]
 availNamesWithOccs (AvailTC _ ns fs)
   = [ (n, nameOccName n) | n <- ns ] ++
     [ (flSelector fl, mkVarOccFS (flLabel fl)) | fl <- fs ]
@@ -224,6 +239,7 @@ plusAvail a1 a2 = pprPanic "GHC.Rename.Env.plusAvail" (hsep [ppr a1,ppr a2])
 -- | trims an 'AvailInfo' to keep only a single name
 trimAvail :: AvailInfo -> Name -> AvailInfo
 trimAvail (Avail n)         _ = Avail n
+trimAvail (AvailFL f)       _ = AvailFL f
 trimAvail (AvailTC n ns fs) m = case find ((== m) . flSelector) fs of
     Just x  -> AvailTC n [] [x]
     Nothing -> ASSERT( m `elem` ns ) AvailTC n [m] []
@@ -238,6 +254,8 @@ filterAvail keep ie rest =
   case ie of
     Avail n | keep n    -> ie : rest
             | otherwise -> rest
+    AvailFL fl | keep (flSelector fl) -> ie : rest
+               | otherwise            -> rest
     AvailTC tc ns fs ->
         let ns' = filter keep ns
             fs' = filter (keep . flSelector) fs in
@@ -263,6 +281,8 @@ instance Outputable AvailInfo where
 pprAvail :: AvailInfo -> SDoc
 pprAvail (Avail n)
   = ppr n
+pprAvail (AvailFL fl)
+  = ppr fl
 pprAvail (AvailTC n ns fs)
   = ppr n <> braces (sep [ fsep (punctuate comma (map ppr ns)) <> semi
                          , fsep (punctuate comma (map (ppr . flLabel) fs))])
@@ -276,12 +296,17 @@ instance Binary AvailInfo where
             put_ bh ab
             put_ bh ac
             put_ bh ad
+    put_ bh (AvailFL af) = do
+            putByte bh 2
+            put_ bh af
     get bh = do
             h <- getByte bh
             case h of
               0 -> do aa <- get bh
                       return (Avail aa)
-              _ -> do ab <- get bh
+              1 -> do ab <- get bh
                       ac <- get bh
                       ad <- get bh
                       return (AvailTC ab ac ad)
+              _ -> do af <- get bh
+                      return (AvailFL af)

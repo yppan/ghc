@@ -1613,7 +1613,6 @@ getParent rdr_env n
   = case lookupGRE_Name rdr_env n of
       Just gre -> case gre_par gre of
                     ParentIs  { par_is = p } -> p
-                    FldParent { par_is = p } -> p
                     _                        -> n
       Nothing -> n
 

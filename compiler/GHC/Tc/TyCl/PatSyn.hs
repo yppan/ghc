@@ -709,7 +709,7 @@ tc_patsyn_finish lname dir is_infix lpat'
                                          ex_tvs   prov_theta
                                          arg_tys pat_ty
 
-         -- TODO: Make this have the proper information
+         -- AMG TODO: Make this have the proper information
        ; let mkFieldLabel name = FieldLabel { flLabel = occNameFS (nameOccName name)
                                             , flIsOverloaded = False
                                             , flSelector = name }

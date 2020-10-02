@@ -273,8 +273,8 @@ exports_from_avail (Just (L _ rdr_items)) rdr_env imports this_mod
 
     -- See Note [Avails of associated data families]
     expand_tyty_gre :: GlobalRdrElt -> [GlobalRdrElt]
-    expand_tyty_gre (gre@GRE { gre_name = me, gre_par = ParentIs p })
-      | isTyConName p, isTyConName me = [gre, gre{ gre_par = NoParent }]
+    expand_tyty_gre (gre@GRE { gre_par = ParentIs p })
+      | isTyConName p, isTyConName (gre_name gre) = [gre, gre{ gre_par = NoParent }]
     expand_tyty_gre gre = [gre]
 
     imported_modules = [ imv_name imv
@@ -423,12 +423,9 @@ classifyGREs :: [GlobalRdrElt] -> ([Name], [FieldLabel])
 classifyGREs = partitionEithers . map classifyGRE
 
 classifyGRE :: GlobalRdrElt -> Either Name FieldLabel
-classifyGRE gre = case gre_par gre of
-  FldParent _ Nothing -> Right (FieldLabel (occNameFS (nameOccName n)) False n)
-  FldParent _ (Just lbl) -> Right (FieldLabel lbl True n)
-  _                      -> Left  n
-  where
-    n = gre_name gre
+classifyGRE gre = case gre_child gre of
+                    ChildName name -> Left name
+                    ChildField fl  -> Right fl
 
 -- Renaming and typechecking of exports happens after everything else has
 -- been typechecked.
@@ -600,9 +597,6 @@ checkPatSynParent :: Name    -- ^ Alleged parent type constructor
                              --   b) A pattern synonym selector
                   -> TcM ()  -- Fails if wrong parent
 checkPatSynParent _ (ParentIs {}) _
-  = return ()
-
-checkPatSynParent _ (FldParent {}) _
   = return ()
 
 checkPatSynParent parent NoParent mpat_syn

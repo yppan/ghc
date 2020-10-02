@@ -101,8 +101,11 @@ data FieldLbl a = FieldLabel {
   deriving (Eq, Functor, Foldable, Traversable)
 deriving instance Data a => Data (FieldLbl a)
 
+instance HasOccName (FieldLbl a) where
+  occName = mkVarOccFS . flLabel
+
 instance Outputable a => Outputable (FieldLbl a) where
-    ppr fl = ppr (flLabel fl) <> braces (ppr (flSelector fl))
+    ppr fl = ppr (flLabel fl) <> whenPprDebug (braces (ppr (flSelector fl)))
 
 instance Binary a => Binary (FieldLbl a) where
     put_ bh (FieldLabel aa ab ac) = do

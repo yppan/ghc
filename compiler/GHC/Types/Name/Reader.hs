@@ -55,11 +55,14 @@ module GHC.Types.Name.Reader (
         gresFromAvails, gresFromAvail, localGREsFromAvail, availFromGRE,
         greRdrNames, greSrcSpan, greQualModName,
         gresToAvailInfo,
+        greDefinitionModule, greDefinitionSrcSpan,
+        gre_name, -- AMG TODO: can we get rid of export?
 
         -- ** Global 'RdrName' mapping elements: 'GlobalRdrElt', 'Provenance', 'ImportSpec'
         GlobalRdrElt(..), isLocalGRE, isRecFldGRE, isOverloadedRecFldGRE, greLabel,
         unQualOK, qualSpecOK, unQualSpecOK,
         pprNameProvenance,
+        Child(..), childSrcSpan,
         Parent(..), greParent_maybe,
         ImportSpec(..), ImpDeclSpec(..), ImpItemSpec(..),
         importSpecLoc, importSpecModule, isExplicitItem, bestImport,
@@ -480,7 +483,7 @@ type GlobalRdrEnv = OccEnv [GlobalRdrElt]
 --
 -- An element of the 'GlobalRdrEnv'
 data GlobalRdrElt
-  = GRE { gre_name :: Name
+  = GRE { gre_child :: Child
         , gre_par  :: Parent
         , gre_lcl :: Bool          -- ^ True <=> the thing was defined locally
         , gre_imp :: [ImportSpec]  -- ^ In scope through these imports
@@ -488,27 +491,30 @@ data GlobalRdrElt
          -- INVARIANT: either gre_lcl = True or gre_imp is non-empty
          -- See Note [GlobalRdrElt provenance]
 
+data Child = ChildName Name
+           | ChildField FieldLabel
+           deriving (Data, Eq)
+
+instance HasOccName Child where
+  occName (ChildName name) = occName name
+  occName (ChildField fl)  = occName fl
+
 -- | The children of a Name are the things that are abbreviated by the ".."
 --   notation in export lists.  See Note [Parents]
 data Parent = NoParent
             | ParentIs  { par_is :: Name }
-            | FldParent { par_is :: Name, par_lbl :: Maybe FieldLabelString }
               -- ^ See Note [Parents for record fields]
             deriving (Eq, Data)
 
 instance Outputable Parent where
    ppr NoParent        = empty
    ppr (ParentIs n)    = text "parent:" <> ppr n
-   ppr (FldParent n f) = text "fldparent:"
-                             <> ppr n <> colon <> ppr f
 
 plusParent :: Parent -> Parent -> Parent
 -- See Note [Combining parents]
 plusParent p1@(ParentIs _)    p2 = hasParent p1 p2
-plusParent p1@(FldParent _ _) p2 = hasParent p1 p2
 plusParent p1 p2@(ParentIs _)    = hasParent p2 p1
-plusParent p1 p2@(FldParent _ _) = hasParent p2 p1
-plusParent _ _                   = NoParent
+plusParent NoParent NoParent     = NoParent
 
 hasParent :: Parent -> Parent -> Parent
 #if defined(DEBUG)
@@ -571,6 +577,8 @@ Note [Parents]
 
 Note [Parents for record fields]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+AMG TODO: update this outdated note
+
 For record fields, in addition to the Name of the type constructor
 (stored in par_is), we use FldParent to store the field label.  This
 extra information is used for identifying overloaded record fields
@@ -652,32 +660,45 @@ gresFromAvail prov_fn avail
     mk_gre n
       = case prov_fn n of  -- Nothing => bound locally
                            -- Just is => imported from 'is'
-          Nothing -> GRE { gre_name = n, gre_par = mkParent n avail
+          Nothing -> GRE { gre_child = ChildName n, gre_par = mkParent n avail
                          , gre_lcl = True, gre_imp = [] }
-          Just is -> GRE { gre_name = n, gre_par = mkParent n avail
+          Just is -> GRE { gre_child = ChildName n, gre_par = mkParent n avail
                          , gre_lcl = False, gre_imp = [is] }
 
-    mk_fld_gre (FieldLabel { flLabel = lbl, flIsOverloaded = is_overloaded
-                           , flSelector = n })
-      = case prov_fn n of  -- Nothing => bound locally
+    mk_fld_gre fl
+      = case prov_fn (flSelector fl) of  -- Nothing => bound locally
                            -- Just is => imported from 'is'
-          Nothing -> GRE { gre_name = n, gre_par = FldParent (availName avail) mb_lbl
+          Nothing -> GRE { gre_child = ChildField fl, gre_par = ParentIs (availName avail)
                          , gre_lcl = True, gre_imp = [] }
-          Just is -> GRE { gre_name = n, gre_par = FldParent (availName avail) mb_lbl
+          Just is -> GRE { gre_child = ChildField fl, gre_par = ParentIs (availName avail)
                          , gre_lcl = False, gre_imp = [is] }
-      where
-        mb_lbl | is_overloaded = Just lbl
-               | otherwise     = Nothing
 
+
+gre_name :: GlobalRdrElt -> Name
+gre_name gre = case gre_child gre of
+                 ChildName name -> name
+                 ChildField fl  -> flSelector fl
+
+childSrcSpan :: Child -> SrcSpan
+childSrcSpan (ChildName name) = nameSrcSpan name
+childSrcSpan (ChildField fl)  = nameSrcSpan (flSelector fl)
+
+-- | The SrcSpan of the name pointed to by the GRE.
+greDefinitionSrcSpan :: GlobalRdrElt -> SrcSpan
+greDefinitionSrcSpan = childSrcSpan . gre_child
+
+-- | The module in which the name pointed to by the GRE is defined.
+greDefinitionModule :: GlobalRdrElt -> Maybe Module
+greDefinitionModule = nameModule_maybe . gre_name
 
 greQualModName :: GlobalRdrElt -> ModuleName
 -- Get a suitable module qualifier for the GRE
 -- (used in mkPrintUnqualified)
 -- Prerecondition: the gre_name is always External
-greQualModName gre@(GRE { gre_name = name, gre_lcl = lcl, gre_imp = iss })
- | lcl, Just mod <- nameModule_maybe name = moduleName mod
- | (is:_) <- iss                          = is_as (is_decl is)
- | otherwise                              = pprPanic "greQualModName" (ppr gre)
+greQualModName gre@(GRE { gre_lcl = lcl, gre_imp = iss })
+ | lcl, Just mod <- greDefinitionModule gre = moduleName mod
+ | (is:_) <- iss                            = is_as (is_decl is)
+ | otherwise                                = pprPanic "greQualModName" (ppr gre)
 
 greRdrNames :: GlobalRdrElt -> [RdrName]
 greRdrNames gre@GRE{ gre_lcl = lcl, gre_imp = iss }
@@ -696,21 +717,21 @@ greRdrNames gre@GRE{ gre_lcl = lcl, gre_imp = iss }
 -- declaration.  We want to sort the export locations in
 -- exportClashErr by this SrcSpan, we need to extract it:
 greSrcSpan :: GlobalRdrElt -> SrcSpan
-greSrcSpan gre@(GRE { gre_name = name, gre_lcl = lcl, gre_imp = iss } )
-  | lcl           = nameSrcSpan name
+greSrcSpan gre@(GRE { gre_lcl = lcl, gre_imp = iss } )
+  | lcl           = greDefinitionSrcSpan gre
   | (is:_) <- iss = is_dloc (is_decl is)
   | otherwise     = pprPanic "greSrcSpan" (ppr gre)
 
 mkParent :: Name -> AvailInfo -> Parent
-mkParent _ (Avail _)           = NoParent
+mkParent _ (Avail _)                   = NoParent
+mkParent _ (AvailFL _)                 = NoParent
 mkParent n (AvailTC m _ _) | n == m    = NoParent
-                         | otherwise = ParentIs m
+                           | otherwise = ParentIs m
 
 greParent_maybe :: GlobalRdrElt -> Maybe Name
 greParent_maybe gre = case gre_par gre of
                         NoParent      -> Nothing
                         ParentIs n    -> Just n
-                        FldParent n _ -> Just n
 
 -- | Takes a list of distinct GREs and folds them
 -- into AvailInfos. This is more efficient than mapping each individual
@@ -750,29 +771,22 @@ gresToAvailInfo gres
 
         comb :: GlobalRdrElt -> AvailInfo -> AvailInfo
         comb _ (Avail n) = Avail n -- Duplicated name, should not happen
+        comb _ (AvailFL fl) = AvailFL fl -- TODO: shouldn't happen either?
         comb gre (AvailTC m ns fls)
-          = case gre_par gre of
-              NoParent    -> AvailTC m (name:ns) fls -- Not sure this ever happens
-              ParentIs {} -> AvailTC m (insertChildIntoChildren m ns name) fls
-              FldParent _ mb_lbl -> AvailTC m ns (mkFieldLabel name mb_lbl : fls)
+          = case (gre_par gre, gre_child gre) of
+              (NoParent, ChildName me)    -> AvailTC m (me:ns) fls -- Not sure this ever happens -- TODO: AvailTC invariant?
+              (NoParent, ChildField fl)   -> AvailTC m ns (fl:fls)
+              (ParentIs {}, ChildName me) -> AvailTC m (insertChildIntoChildren m ns me) fls
+              (ParentIs {}, ChildField fl) -> AvailTC m ns (fl:fls)
 
 availFromGRE :: GlobalRdrElt -> AvailInfo
-availFromGRE (GRE { gre_name = me, gre_par = parent })
-  = case parent of
-      ParentIs p                  -> AvailTC p [me] []
-      NoParent   | isTyConName me -> AvailTC me [me] []
-                 | otherwise      -> avail   me
-      FldParent p mb_lbl -> AvailTC p [] [mkFieldLabel me mb_lbl]
-
-mkFieldLabel :: Name -> Maybe FastString -> FieldLabel
-mkFieldLabel me mb_lbl =
-          case mb_lbl of
-                 Nothing  -> FieldLabel { flLabel = occNameFS (nameOccName me)
-                                        , flIsOverloaded = False
-                                        , flSelector = me }
-                 Just lbl -> FieldLabel { flLabel = lbl
-                                        , flIsOverloaded = True
-                                        , flSelector = me }
+availFromGRE (GRE { gre_child = child, gre_par = parent })
+  = case (parent, child) of
+      (ParentIs p, ChildName me)       -> AvailTC p [me] []
+      (ParentIs p, ChildField fl)      -> AvailTC p [] [fl]
+      (NoParent, ChildName me) | isTyConName me -> AvailTC me [me] []
+                               | otherwise      -> avail   me
+      (NoParent, ChildField fl) -> AvailFL fl
 
 emptyGlobalRdrEnv :: GlobalRdrEnv
 emptyGlobalRdrEnv = emptyOccEnv
@@ -806,9 +820,12 @@ lookupGlobalRdrEnv env occ_name = case lookupOccEnv env occ_name of
                                   Nothing   -> []
                                   Just gres -> gres
 
+instance HasOccName GlobalRdrElt where
+  occName = greOccName
+
 greOccName :: GlobalRdrElt -> OccName
-greOccName (GRE{gre_par = FldParent{par_lbl = Just lbl}}) = mkVarOccFS lbl
-greOccName gre                                            = nameOccName (gre_name gre)
+greOccName GRE{gre_child = ChildName n}   = nameOccName n
+greOccName GRE{gre_child = ChildField fl} = mkVarOccFS (flLabel fl)
 
 lookupGRE_RdrName :: RdrName -> GlobalRdrEnv -> [GlobalRdrElt]
 lookupGRE_RdrName rdr_name env
@@ -861,20 +878,21 @@ isLocalGRE :: GlobalRdrElt -> Bool
 isLocalGRE (GRE {gre_lcl = lcl }) = lcl
 
 isRecFldGRE :: GlobalRdrElt -> Bool
-isRecFldGRE (GRE {gre_par = FldParent{}}) = True
-isRecFldGRE _                             = False
+isRecFldGRE = isJust . greFieldLabel
 
 isOverloadedRecFldGRE :: GlobalRdrElt -> Bool
 -- ^ Is this a record field defined with DuplicateRecordFields?
 -- (See Note [Parents for record fields])
-isOverloadedRecFldGRE (GRE {gre_par = FldParent{par_lbl = Just _}}) = True
-isOverloadedRecFldGRE _                                             = False
+isOverloadedRecFldGRE = maybe False flIsOverloaded . greFieldLabel
+
+greFieldLabel :: GlobalRdrElt -> Maybe FieldLabel
+greFieldLabel gre = case gre_child gre of
+                      ChildName{}   -> Nothing
+                      ChildField fl -> Just fl
 
 -- Returns the field label of this GRE, if it has one
 greLabel :: GlobalRdrElt -> Maybe FieldLabelString
-greLabel (GRE{gre_par = FldParent{par_lbl = Just lbl}}) = Just lbl
-greLabel (GRE{gre_name = n, gre_par = FldParent{}})     = Just (occNameFS (nameOccName n))
-greLabel _                                              = Nothing
+greLabel = fmap flLabel . greFieldLabel
 
 unQualOK :: GlobalRdrElt -> Bool
 -- ^ Test if an unqualified version of this thing would be in scope
@@ -936,17 +954,17 @@ pickUnqualGRE gre@(GRE { gre_lcl = lcl, gre_imp = iss })
     iss' = filter unQualSpecOK iss
 
 pickQualGRE :: ModuleName -> GlobalRdrElt -> Maybe GlobalRdrElt
-pickQualGRE mod gre@(GRE { gre_name = n, gre_lcl = lcl, gre_imp = iss })
+pickQualGRE mod gre@(GRE { gre_lcl = lcl, gre_imp = iss })
   | not lcl', null iss' = Nothing
   | otherwise           = Just (gre { gre_lcl = lcl', gre_imp = iss' })
   where
     iss' = filter (qualSpecOK mod) iss
-    lcl' = lcl && name_is_from mod n
+    lcl' = lcl && name_is_from mod
 
-    name_is_from :: ModuleName -> Name -> Bool
-    name_is_from mod name = case nameModule_maybe name of
-                              Just n_mod -> moduleName n_mod == mod
-                              Nothing    -> False
+    name_is_from :: ModuleName -> Bool
+    name_is_from mod = case greDefinitionModule gre of
+                         Just n_mod -> moduleName n_mod == mod
+                         Nothing    -> False
 
 pickGREsModExp :: ModuleName -> [GlobalRdrElt] -> [(GlobalRdrElt,GlobalRdrElt)]
 -- ^ Pick GREs that are in scope *both* qualified *and* unqualified
@@ -965,8 +983,8 @@ pickGREsModExp mod gres = mapMaybe (pickBothGRE mod) gres
 -- cluttered envt is no use.  Really, it's only useful for
 -- GHC.Base and GHC.Tuple.
 pickBothGRE :: ModuleName -> GlobalRdrElt -> Maybe (GlobalRdrElt, GlobalRdrElt)
-pickBothGRE mod gre@(GRE { gre_name = n })
-  | isBuiltInSyntax n                = Nothing
+pickBothGRE mod gre
+  | isBuiltInSyntax (gre_name gre)   = Nothing
   | Just gre1 <- pickQualGRE mod gre
   , Just gre2 <- pickUnqualGRE   gre = Just (gre1, gre2)
   | otherwise                        = Nothing
@@ -987,15 +1005,15 @@ mkGlobalRdrEnv gres
 insertGRE :: GlobalRdrElt -> [GlobalRdrElt] -> [GlobalRdrElt]
 insertGRE new_g [] = [new_g]
 insertGRE new_g (old_g : old_gs)
-        | gre_name new_g == gre_name old_g
+        | gre_child new_g == gre_child old_g
         = new_g `plusGRE` old_g : old_gs
         | otherwise
         = old_g : insertGRE new_g old_gs
 
 plusGRE :: GlobalRdrElt -> GlobalRdrElt -> GlobalRdrElt
--- Used when the gre_name fields match
+-- Used when the gre_child fields match
 plusGRE g1 g2
-  = GRE { gre_name = gre_name g1
+  = GRE { gre_child = gre_child g1
         , gre_lcl  = gre_lcl g1 || gre_lcl g2
         , gre_imp  = gre_imp g1 ++ gre_imp g2
         , gre_par  = gre_par  g1 `plusParent` gre_par  g2 }
@@ -1104,8 +1122,8 @@ shadowName env name
 
     shadow_with :: Name -> GlobalRdrElt -> Maybe GlobalRdrElt
     shadow_with new_name
-       old_gre@(GRE { gre_name = old_name, gre_lcl = lcl, gre_imp = iss })
-       = case nameModule_maybe old_name of
+       old_gre@(GRE { gre_lcl = lcl, gre_imp = iss })
+       = case greDefinitionModule old_gre of
            Nothing -> Just old_gre   -- Old name is Internal; do not shadow
            Just old_mod
               | Just new_mod <- nameModule_maybe new_name
@@ -1120,17 +1138,17 @@ shadowName env name
 
               where
                 iss' = lcl_imp ++ mapMaybe (shadow_is new_name) iss
-                lcl_imp | lcl       = [mk_fake_imp_spec old_name old_mod]
+                lcl_imp | lcl       = [mk_fake_imp_spec old_gre old_mod]
                         | otherwise = []
 
-    mk_fake_imp_spec old_name old_mod    -- Urgh!
+    mk_fake_imp_spec old_gre old_mod    -- Urgh!
       = ImpSpec id_spec ImpAll
       where
         old_mod_name = moduleName old_mod
         id_spec      = ImpDeclSpec { is_mod = old_mod_name
                                    , is_as = old_mod_name
                                    , is_qual = True
-                                   , is_dloc = nameSrcSpan old_name }
+                                   , is_dloc = greDefinitionSrcSpan old_gre }
 
     shadow_is :: Name -> ImportSpec -> Maybe ImportSpec
     shadow_is new_name is@(ImpSpec { is_decl = id_spec })
@@ -1297,10 +1315,11 @@ isExplicitItem (ImpSome {is_explicit = exp}) = exp
 pprNameProvenance :: GlobalRdrElt -> SDoc
 -- ^ Print out one place where the name was define/imported
 -- (With -dppr-debug, print them all)
-pprNameProvenance (GRE { gre_name = name, gre_lcl = lcl, gre_imp = iss })
+pprNameProvenance gre@(GRE { gre_lcl = lcl, gre_imp = iss })
   = ifPprDebug (vcat pp_provs)
                (head pp_provs)
   where
+    name = gre_name gre
     pp_provs = pp_lcl ++ map pp_is iss
     pp_lcl = if lcl then [text "defined at" <+> ppr (nameSrcLoc name)]
                     else []

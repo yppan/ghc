@@ -624,20 +624,11 @@ lookupSubBndrOcc_helper must_have_parent warn_if_deprec parent rdr_name
     where
         -- Convert into FieldLabel if necessary
         checkFld :: GlobalRdrElt -> RnM ChildLookupResult
-        checkFld g@GRE{gre_name, gre_par} = do
+        checkFld g@GRE{gre_child,gre_par} = do
           addUsedGRE warn_if_deprec g
-          return $ case gre_par of
-            FldParent _ mfs ->
-              FoundFL  (fldParentToFieldLabel gre_name mfs)
-            _ -> FoundName gre_par gre_name
-
-        fldParentToFieldLabel :: Name -> Maybe FastString -> FieldLabel
-        fldParentToFieldLabel name mfs =
-          case mfs of
-            Nothing ->
-              let fs = occNameFS (nameOccName name)
-              in FieldLabel fs False name
-            Just fs -> FieldLabel fs True name
+          return $ case gre_child of
+            ChildField fl  -> FoundFL fl
+            ChildName name -> FoundName gre_par name
 
         -- Called when we find no matching GREs after disambiguation but
         -- there are three situations where this happens.
@@ -675,7 +666,6 @@ lookupSubBndrOcc_helper must_have_parent warn_if_deprec parent rdr_name
         getParent (GRE { gre_par = p } ) =
           case p of
             ParentIs cur_parent -> Just cur_parent
-            FldParent { par_is = cur_parent } -> Just cur_parent
             NoParent -> Nothing
 
         picked_gres :: [GlobalRdrElt] -> DisambigInfo
@@ -1327,7 +1317,7 @@ addUsedGREs gres
     imp_gres = filterOut isLocalGRE gres
 
 warnIfDeprecated :: GlobalRdrElt -> RnM ()
-warnIfDeprecated gre@(GRE { gre_name = name, gre_imp = iss })
+warnIfDeprecated gre@(GRE { gre_imp = iss })
   | (imp_spec : _) <- iss
   = do { dflags <- getDynFlags
        ; this_mod <- getModule
@@ -1343,6 +1333,7 @@ warnIfDeprecated gre@(GRE { gre_name = name, gre_imp = iss })
   = return ()
   where
     occ = greOccName gre
+    name = gre_name gre
     name_mod = ASSERT2( isExternalName name, ppr name ) nameModule name
     doc = text "The name" <+> quotes (ppr occ) <+> ptext (sLit "is mentioned explicitly")
 
@@ -1363,7 +1354,6 @@ lookupImpDeprec iface gre
   = mi_warn_fn (mi_final_exts iface) (greOccName gre) `mplus`  -- Bleat if the thing,
     case gre_par gre of                      -- or its parent, is warn'd
        ParentIs  p              -> mi_warn_fn (mi_final_exts iface) (nameOccName p)
-       FldParent { par_is = p } -> mi_warn_fn (mi_final_exts iface) (nameOccName p)
        NoParent                 -> Nothing
 
 {-
