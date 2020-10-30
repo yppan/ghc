@@ -25,7 +25,7 @@ module GHC.Stg.Syntax (
         GenStgTopBinding(..), GenStgBinding(..), GenStgExpr(..), GenStgRhs(..),
         GenStgAlt, AltType(..),
 
-        StgPass(..), BinderP, XRhsClosure, XLet, XLetNoEscape,
+        StgPass(..), BinderP, XRhsClosure, XLet, XLetNoEscape, XXStgExpr,
         NoExtFieldSilent, noExtFieldSilent,
         OutputablePass,
 
@@ -73,6 +73,7 @@ import Data.Data   ( Data )
 import Data.List   ( intersperse )
 import GHC.Core.DataCon
 import GHC.Driver.Session
+import GHC.Hs.Extension ( NoExtCon )
 import GHC.Types.ForeignCall ( ForeignCall )
 import GHC.Types.Id
 import GHC.Types.Name        ( isDynLinkName )
@@ -386,6 +387,9 @@ Finally for @hpc@ expressions we introduce a new STG construct.
     (Tickish Id)
     (GenStgExpr pass)       -- sub expression
 
+  | XStgExpr
+        (XXStgExpr pass)
+
 -- END of GenStgExpr
 
 {-
@@ -475,6 +479,10 @@ type instance XLet 'CodeGen = NoExtFieldSilent
 type family XLetNoEscape (pass :: StgPass)
 type instance XLetNoEscape 'Vanilla = NoExtFieldSilent
 type instance XLetNoEscape 'CodeGen = NoExtFieldSilent
+
+type family XXStgExpr (pass :: StgPass)
+type instance XXStgExpr 'Vanilla = NoExtCon
+type instance XXStgExpr 'CodeGen = NoExtCon
 
 stgRhsArity :: StgRhs -> Int
 stgRhsArity (StgRhsClosure _ _ _ bndrs _)
@@ -644,6 +652,7 @@ type OutputablePass pass =
   ( Outputable (XLet pass)
   , Outputable (XLetNoEscape pass)
   , Outputable (XRhsClosure pass)
+  , Outputable (XXStgExpr pass)
   , OutputableBndr (BinderP pass)
   )
 
@@ -785,6 +794,8 @@ pprStgExpr opts e = case e of
              , nest 2 (vcat (map (pprStgAlt opts True) alts))
              , char '}'
              ]
+
+   XStgExpr ext -> ppr ext
 
 
 pprStgAlt :: OutputablePass pass => StgPprOpts -> Bool -> GenStgAlt pass -> SDoc

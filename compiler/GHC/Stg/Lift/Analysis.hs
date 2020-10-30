@@ -27,6 +27,7 @@ import GHC.Platform.Profile
 import GHC.Types.Basic
 import GHC.Types.Demand
 import GHC.Driver.Session
+import GHC.Hs.Extension ( NoExtCon, noExtCon )
 import GHC.Types.Id
 import GHC.Runtime.Heap.Layout ( WordOff )
 import GHC.Stg.Syntax
@@ -115,6 +116,7 @@ type instance BinderP      'LiftLams = BinderInfo
 type instance XRhsClosure  'LiftLams = DIdSet
 type instance XLet         'LiftLams = Skeleton
 type instance XLetNoEscape 'LiftLams = Skeleton
+type instance XXStgExpr    'LiftLams = NoExtCon
 
 freeVarsOfRhs :: (XRhsClosure pass ~ DIdSet) => GenStgRhs pass -> DIdSet
 freeVarsOfRhs (StgRhsCon _ _ args) = mkDVarSet [ id | StgVarArg id <- args ]
@@ -248,6 +250,7 @@ tagSkeletonExpr (StgTick t e)
     (skel, arg_occs, e') = tagSkeletonExpr e
 tagSkeletonExpr (StgLet _ bind body) = tagSkeletonLet False body bind
 tagSkeletonExpr (StgLetNoEscape _ bind body) = tagSkeletonLet True body bind
+tagSkeletonExpr (XStgExpr ext) = noExtCon ext
 
 mkLet :: Bool -> Skeleton -> LlStgBinding -> LlStgExpr -> LlStgExpr
 mkLet True = StgLetNoEscape

@@ -19,6 +19,7 @@ where
 
 import GHC.Prelude
 
+import GHC.Hs.Extension ( noExtCon )
 import GHC.Types.Basic
 import GHC.Driver.Session
 import GHC.Types.Id
@@ -247,6 +248,7 @@ liftExpr (StgLetNoEscape scope bind body)
       case mb_bind' of
         Nothing -> pprPanic "stgLiftLams" (text "Should never decide to lift LNEs")
         Just bind' -> pure (StgLetNoEscape noExtFieldSilent bind' body')
+liftExpr (XStgExpr ext) = noExtCon ext
 
 liftAlt :: LlStgAlt -> LiftM OutStgAlt
 liftAlt (con, infos, rhs) = withSubstBndrs (map binderInfoBndr infos) $ \bndrs' ->

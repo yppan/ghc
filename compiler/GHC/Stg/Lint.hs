@@ -218,6 +218,12 @@ lintStgExpr (StgCase scrut bndr alts_type alts) = do
 
     addInScopeVars [bndr | in_scope] (mapM_ lintAlt alts)
 
+-- Eventually we may want to lint a pass with a non-void XStgExpr extension, but
+-- for now we simply raise an error.
+lintStgExpr xStg@(XStgExpr _) = do
+    opts <- getStgPprOpts
+    addErrL (text "Unexpected XStgExpr" <+> pprStgExpr opts xStg)
+
 lintAlt
     :: (OutputablePass a, BinderP a ~ Id)
     => (AltCon, [Id], GenStgExpr a) -> LintM ()

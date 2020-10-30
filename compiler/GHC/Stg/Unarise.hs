@@ -208,6 +208,7 @@ import GHC.Types.Basic
 import GHC.Core
 import GHC.Core.DataCon
 import GHC.Data.FastString (FastString, mkFastString)
+import GHC.Hs.Extension (noExtCon)
 import GHC.Types.Id
 import GHC.Types.Literal
 import GHC.Core.Make (aBSENT_SUM_FIELD_ERROR_ID)
@@ -368,6 +369,8 @@ unariseExpr rho (StgLetNoEscape ext bind e)
 
 unariseExpr rho (StgTick tick e)
   = StgTick tick <$> unariseExpr rho e
+
+unariseExpr _ (XStgExpr ext) = noExtCon ext
 
 -- Doesn't return void args.
 unariseMulti_maybe :: UnariseEnv -> DataCon -> [InStgArg] -> [Type] -> Maybe [OutStgArg]

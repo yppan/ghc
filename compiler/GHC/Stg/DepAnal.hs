@@ -4,6 +4,7 @@ module GHC.Stg.DepAnal (depSortStgPgm) where
 
 import GHC.Prelude
 
+import GHC.Hs.Extension (noExtCon)
 import GHC.Stg.Syntax
 import GHC.Types.Id
 import GHC.Types.Name (Name, nameIsLocalOrFrom)
@@ -105,6 +106,9 @@ annTopBindingsDeps this_mod bs = zip bs (map top_bind bs)
 
     expr bounds (StgTick _ e) =
       expr bounds e
+
+    expr _ (XStgExpr ext) =
+      noExtCon ext
 
     alts :: BVs -> [StgAlt] -> FVs
     alts bounds = unionVarSets . map (alt bounds)

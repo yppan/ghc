@@ -31,6 +31,7 @@ import GHC.Prelude
 
 import GHC.Stg.Syntax
 
+import GHC.Hs.Extension ( noExtCon )
 import GHC.Types.Id (Id)
 import GHC.Utils.Panic
 
@@ -171,3 +172,4 @@ statExpr (StgCase expr _ _ alts)
         = combineSEs (map statExpr [ e | (_,_,e) <- alts ])
 
 statExpr (StgLam {}) = panic "statExpr StgLam"
+statExpr (XStgExpr ext) = noExtCon ext

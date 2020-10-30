@@ -93,6 +93,7 @@ module GHC.Stg.CSE (stgCse) where
 import GHC.Prelude
 
 import GHC.Core.DataCon
+import GHC.Hs.Extension (noExtCon)
 import GHC.Types.Id
 import GHC.Stg.Syntax
 import GHC.Utils.Outputable
@@ -345,6 +346,8 @@ stgCseExpr env (StgLetNoEscape ext binds body)
     = let (binds', env') = stgCseBind env binds
           body' = stgCseExpr env' body
       in mkStgLet (StgLetNoEscape ext) binds' body'
+
+stgCseExpr _ (XStgExpr ext) = noExtCon ext
 
 -- Case alternatives
 -- Extend the CSE environment

@@ -44,6 +44,7 @@ module GHC.Stg.FVs (
 
 import GHC.Prelude
 
+import GHC.Hs.Extension ( noExtCon )
 import GHC.Stg.Syntax
 import GHC.Types.Id
 import GHC.Types.Var.Set
@@ -144,6 +145,7 @@ expr env = go
         fvs' = unionDVarSet (tickish tick) fvs
         tickish (Breakpoint _ ids) = mkDVarSet ids
         tickish _                  = emptyDVarSet
+    go (XStgExpr ext) = noExtCon ext
 
     go_bind dc bind body = (dc bind' body', fvs)
       where
