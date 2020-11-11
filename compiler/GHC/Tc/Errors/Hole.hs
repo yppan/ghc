@@ -441,8 +441,7 @@ pprHoleFit :: HoleFitDispConfig -> HoleFit -> SDoc
 pprHoleFit _ (RawHoleFit sd) = sd
 pprHoleFit (HFDC sWrp sWrpVars sTy sProv sMs) (HoleFit {..}) =
  hang display 2 provenance
- where name =  getName hfCand
-       tyApp = sep $ zipWithEqual "pprHoleFit" pprArg vars hfWrap
+ where tyApp = sep $ zipWithEqual "pprHoleFit" pprArg vars hfWrap
          where pprArg b arg = case binderArgFlag b of
                                 -- See Note [Explicit Case Statement for Specificity]
                                 (Invisible spec) -> case spec of
@@ -471,7 +470,10 @@ pprHoleFit (HFDC sWrp sWrpVars sTy sProv sMs) (HoleFit {..}) =
        holeVs = sep $ map (parens . (text "_" <+> dcolon <+>) . ppr) hfMatches
        holeDisp = if sMs then holeVs
                   else sep $ replicate (length hfMatches) $ text "_"
-       occDisp = pprPrefixOcc name
+       occDisp = pprPrefixOcc $ case hfCand of
+                                  GreHFCand gre   -> occName gre
+                                  NameHFCand name -> occName name
+                                  IdHFCand id_    -> occName id_
        tyDisp = ppWhen sTy $ dcolon <+> ppr hfType
        has = not . null
        wrapDisp = ppWhen (has hfWrap && (sWrp || sWrpVars))
@@ -490,7 +492,8 @@ pprHoleFit (HFDC sWrp sWrpVars sTy sProv sMs) (HoleFit {..}) =
        provenance = ppWhen sProv $ parens $
              case hfCand of
                  GreHFCand gre -> pprNameProvenance gre
-                 _ -> text "bound at" <+> ppr (getSrcLoc name)
+                 NameHFCand name -> text "bound at" <+> ppr (getSrcLoc name)
+                 IdHFCand id_ -> text "bound at" <+> ppr (getSrcLoc id_)
 
 getLocalBindings :: TidyEnv -> CtLoc -> TcM [Id]
 getLocalBindings tidy_orig ct_loc

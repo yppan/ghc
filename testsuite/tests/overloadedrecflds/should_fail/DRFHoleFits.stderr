@@ -1,0 +1,10 @@
+
+DRFHoleFits.hs:7:7: error:
+    • Found hole: _ :: T -> Int
+    • In the expression: _ :: T -> Int
+      In an equation for ‘bar’: bar = _ :: T -> Int
+    • Relevant bindings include
+        bar :: T -> Int (bound at DRFHoleFits.hs:7:1)
+      Valid hole fits include
+        foo :: T -> Int (defined at DRFHoleFits.hs:5:16)
+        bar :: T -> Int (defined at DRFHoleFits.hs:7:1)
