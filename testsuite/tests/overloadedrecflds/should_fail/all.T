@@ -34,3 +34,4 @@ test('T14953', [extra_files(['T14953_A.hs', 'T14953_B.hs'])],
 test('DuplicateExports', normal, compile_fail, [''])
 test('T17965', normal, compile_fail, [''])
 test('DRFHoleFits', normal, compile_fail, [''])
+test('DRFPartialFields', normal, compile_fail, [''])
