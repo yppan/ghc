@@ -692,13 +692,13 @@ rnPatSynBind sig_fn bind@(PSB { psb_id = L l name
                       ; return ( (pat', InfixCon name1 name2)
                                , mkFVs (map unLoc [name1, name2])) }
                RecCon vars ->
-                   do { checkDupRdrNames (map recordPatSynSelectorId vars)
+                   do { checkDupRdrNames (map (rdrNameFieldOcc . recordPatSynSelectorId) vars)
                       ; let rnRecordPatSynField
                               (RecordPatSynField { recordPatSynSelectorId = visible
                                                  , recordPatSynPatVar = hidden })
-                              = do { visible' <- lookupLocatedTopBndrRn visible
+                              = do { visible' <- lookupTopBndrRn (unLoc (rdrNameFieldOcc visible)) -- AMG TODO?
                                    ; hidden'  <- lookupPatSynBndr hidden
-                                   ; return $ RecordPatSynField { recordPatSynSelectorId = visible'
+                                   ; return $ RecordPatSynField { recordPatSynSelectorId = FieldOcc visible' (rdrNameFieldOcc visible)
                                                                 , recordPatSynPatVar = hidden' } }
                       ; names <- mapM rnRecordPatSynField  vars
                       ; return ( (pat', RecCon names)
@@ -726,7 +726,7 @@ rnPatSynBind sig_fn bind@(PSB { psb_id = L l name
                           , psb_ext = fvs' }
               selector_names = case details' of
                                  RecCon names ->
-                                  map (unLoc . recordPatSynSelectorId) names
+                                  map (extFieldOcc . recordPatSynSelectorId) names
                                  _ -> []
 
         ; fvs' `seq` -- See Note [Free-variable space leak]

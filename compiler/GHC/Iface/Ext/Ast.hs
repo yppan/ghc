@@ -877,7 +877,7 @@ instance HiePass p => ToHie (Located (PatSynBind (GhcPass p) (GhcPass p))) where
             (InfixCon a b) -> combineScopes (mkLScope a) (mkLScope b)
             (RecCon r) -> foldr go NoScope r
           go (RecordPatSynField a b) c = combineScopes c
-            $ combineScopes (mkLScope a) (mkLScope b)
+            $ combineScopes (mkLScope (rdrNameFieldOcc a)) (mkLScope b)
           detSpan = case detScope of
             LocalScope a -> Just a
             _ -> Nothing
@@ -1889,8 +1889,12 @@ instance ToHie (Located (DataFamInstDecl GhcRn)) where
 instance ToHie (Located (TyFamInstDecl GhcRn)) where
   toHie (L sp (TyFamInstDecl d)) = toHie $ TS (ResolvedScopes [mkScope sp]) d
 
-instance ToHie (Context a)
-         => ToHie (PatSynFieldContext (RecordPatSynField a)) where
+instance HiePass p => ToHie (Context (FieldOcc (GhcPass p))) where
+  toHie (C c (FieldOcc n (L l _))) = case hiePass @p of
+    HieTc -> toHie (C c (L l n)) -- AMG TODO: probably wrong
+    HieRn -> toHie (C c (L l n)) -- AMG TODO: probably wrong
+
+instance HiePass p => ToHie (PatSynFieldContext (RecordPatSynField (GhcPass p))) where
   toHie (PSC sp (RecordPatSynField a b)) = concatM $
     [ toHie $ C (RecField RecFieldDecl sp) a
     , toHie $ C Use b

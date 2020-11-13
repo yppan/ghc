@@ -623,7 +623,7 @@ a pattern synonym.  What about the /building/ side?
 -}
 
 collectPatSynArgInfo :: HsPatSynDetails GhcRn
-                     -> ([Name], [Name], Bool)
+                     -> ([Name], [FieldLabel], Bool)
 collectPatSynArgInfo details =
   case details of
     PrefixCon _ names    -> (map unLoc names, [], False)
@@ -632,12 +632,15 @@ collectPatSynArgInfo details =
                          where
                             (vars, sels) = unzip (map splitRecordPatSyn names)
   where
-    splitRecordPatSyn :: RecordPatSynField (Located Name)
-                      -> (Name, Name)
+    splitRecordPatSyn :: RecordPatSynField GhcRn
+                      -> (Name, FieldLabel)
     splitRecordPatSyn (RecordPatSynField
                        { recordPatSynPatVar     = L _ patVar
-                       , recordPatSynSelectorId = L _ selId })
-      = (patVar, selId)
+                       , recordPatSynSelectorId = FieldOcc selId (L _ rdr) })
+      = (patVar, FieldLabel { flLabel = occNameFS (occName rdr)
+                            , flIsOverloaded = False -- AMG TODO: use field env?
+                            , flSelector = selId
+                            })
 
 addPatSynCtxt :: Located Name -> TcM a -> TcM a
 addPatSynCtxt (L loc name) thing_inside
@@ -663,7 +666,7 @@ tc_patsyn_finish :: Located Name      -- ^ PatSyn Name
                  -> ([TcInvisTVBinder], [TcType], [PredType], [EvTerm])
                  -> ([LHsExpr GhcTc], [TcType])  -- ^ Pattern arguments and types
                  -> TcType            -- ^ Pattern type
-                 -> [Name]            -- ^ Selector names
+                 -> [FieldLabel]      -- ^ Selector names
                  -- ^ Whether fields, empty if not record PatSyn
                  -> TcM (LHsBinds GhcTc, TcGblEnv)
 tc_patsyn_finish lname dir is_infix lpat'
@@ -709,13 +712,6 @@ tc_patsyn_finish lname dir is_infix lpat'
                                          ex_tvs   prov_theta
                                          arg_tys pat_ty
 
-         -- AMG TODO: Make this have the proper information
-       ; let mkFieldLabel name = FieldLabel { flLabel = occNameFS (nameOccName name)
-                                            , flIsOverloaded = False
-                                            , flSelector = name }
-             field_labels' = map mkFieldLabel field_labels
-
-
        -- Make the PatSyn itself
        ; let patSyn = mkPatSyn (unLoc lname) is_infix
                         (univ_tvs, req_theta)
@@ -723,7 +719,7 @@ tc_patsyn_finish lname dir is_infix lpat'
                         arg_tys
                         pat_ty
                         matcher_id builder_id
-                        field_labels'
+                        field_labels
 
        -- Selectors
        ; let rn_rec_sel_binds = mkPatSynRecSelBinds patSyn (patSynFieldLabels patSyn)
