@@ -495,6 +495,10 @@ data Child = ChildName Name
            | ChildField FieldLabel
            deriving (Data, Eq)
 
+instance Outputable Child where
+  ppr (ChildName   n) = ppr n
+  ppr (ChildField fl) = ppr fl
+
 instance HasOccName Child where
   occName (ChildName name) = occName name
   occName (ChildField fl)  = occName fl
@@ -668,11 +672,10 @@ gresFromAvail prov_fn avail
     mk_fld_gre fl
       = case prov_fn (flSelector fl) of  -- Nothing => bound locally
                            -- Just is => imported from 'is'
-          Nothing -> GRE { gre_child = ChildField fl, gre_par = ParentIs (availName avail)
+          Nothing -> GRE { gre_child = ChildField fl, gre_par = availParent avail
                          , gre_lcl = True, gre_imp = [] }
-          Just is -> GRE { gre_child = ChildField fl, gre_par = ParentIs (availName avail)
+          Just is -> GRE { gre_child = ChildField fl, gre_par = availParent avail
                          , gre_lcl = False, gre_imp = [is] }
-
 
 gre_name :: GlobalRdrElt -> Name
 gre_name gre = case gre_child gre of
@@ -727,6 +730,12 @@ mkParent _ (Avail _)                   = NoParent
 mkParent _ (AvailFL _)                 = NoParent
 mkParent n (AvailTC m _ _) | n == m    = NoParent
                            | otherwise = ParentIs m
+
+availParent :: AvailInfo -> Parent
+availParent (AvailTC m _ _) = ParentIs m
+availParent (Avail {})      = NoParent
+availParent (AvailFL {})    = NoParent
+
 
 greParent_maybe :: GlobalRdrElt -> Maybe Name
 greParent_maybe gre = case gre_par gre of

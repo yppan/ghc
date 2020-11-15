@@ -598,7 +598,7 @@ lookupSubBndrOcc_helper :: Bool -> Bool -> Name -> RdrName
 lookupSubBndrOcc_helper must_have_parent warn_if_deprec parent rdr_name
   | isUnboundName parent
     -- Avoid an error cascade
-  = return (FoundName NoParent (mkUnboundNameRdr rdr_name))
+  = return (FoundChild NoParent (ChildName (mkUnboundNameRdr rdr_name)))
 
   | otherwise = do
   gre_env <- getGlobalRdrEnv
@@ -626,9 +626,7 @@ lookupSubBndrOcc_helper must_have_parent warn_if_deprec parent rdr_name
         checkFld :: GlobalRdrElt -> RnM ChildLookupResult
         checkFld g@GRE{gre_child,gre_par} = do
           addUsedGRE warn_if_deprec g
-          return $ case gre_child of
-            ChildField fl  -> FoundFL fl
-            ChildName name -> FoundName gre_par name
+          return $ FoundChild gre_par gre_child
 
         -- Called when we find no matching GREs after disambiguation but
         -- there are three situations where this happens.
@@ -660,7 +658,7 @@ lookupSubBndrOcc_helper must_have_parent warn_if_deprec parent rdr_name
         mkNameClashErr :: [GlobalRdrElt] -> RnM ChildLookupResult
         mkNameClashErr gres = do
           addNameClashErrRn rdr_name gres
-          return (FoundName (gre_par (head gres)) (gre_name (head gres)))
+          return (FoundChild (gre_par (head gres)) (gre_child (head gres)))
 
         getParent :: GlobalRdrElt -> Maybe Name
         getParent (GRE { gre_par = p } ) =
@@ -736,8 +734,7 @@ data ChildLookupResult
                         Name        -- Name of thing we were looking for
                         SDoc        -- How to print the name
                         [Name]      -- List of possible parents
-      | FoundName Parent Name       --  We resolved to a normal name
-      | FoundFL FieldLabel          --  We resolved to a FL
+      | FoundChild Parent Child     --  We resolved to a child
 
 -- | Specialised version of msum for RnM ChildLookupResult
 combineChildLookupResult :: [RnM ChildLookupResult] -> RnM ChildLookupResult
@@ -750,8 +747,7 @@ combineChildLookupResult (x:xs) = do
 
 instance Outputable ChildLookupResult where
   ppr NameNotFound = text "NameNotFound"
-  ppr (FoundName p n) = text "Found:" <+> ppr p <+> ppr n
-  ppr (FoundFL fls) = text "FoundFL:" <+> ppr fls
+  ppr (FoundChild p n) = text "Found:" <+> ppr p <+> ppr n
   ppr (IncorrectParent p n td ns) = text "IncorrectParent"
                                   <+> hsep [ppr p, ppr n, td, ppr ns]
 
@@ -764,13 +760,13 @@ lookupSubBndrOcc :: Bool
 -- and pick the one with the right parent namep
 lookupSubBndrOcc warn_if_deprec the_parent doc rdr_name = do
   res <-
-    lookupExactOrOrig rdr_name (FoundName NoParent) $
+    lookupExactOrOrig rdr_name (FoundChild NoParent . ChildName) $
       -- This happens for built-in classes, see mod052 for example
       lookupSubBndrOcc_helper True warn_if_deprec the_parent rdr_name
   case res of
     NameNotFound -> return (Left (unknownSubordinateErr doc rdr_name))
-    FoundName _p n -> return (Right n)
-    FoundFL fl  ->  return (Right (flSelector fl))
+    FoundChild _p (ChildName n)   -> return (Right n)
+    FoundChild _p (ChildField fl) -> return (Right (flSelector fl)) -- AMG TODO: really?
     IncorrectParent {}
          -- See [Mismatched class methods and associated type families]
          -- in TcInstDecls.

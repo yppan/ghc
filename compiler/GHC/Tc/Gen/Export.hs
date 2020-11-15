@@ -526,10 +526,11 @@ lookupChildrenExport spec_parent rdr_items =
             NameNotFound -> do { ub <- reportUnboundName unboundName
                                ; let l = getLoc n
                                ; return (Left (L l (IEName (L l ub))))}
-            FoundFL fls -> return $ Right (L (getLoc n) fls)
-            FoundName par name -> do { checkPatSynParent spec_parent par name
-                                     ; return
-                                       $ Left (replaceLWrappedName n name) }
+            FoundChild par child -> do { checkPatSynParent spec_parent par child
+                                       ; return $ case child of
+                                           ChildField fl -> Right (L (getLoc n) fl)
+                                           ChildName  name -> Left (replaceLWrappedName n name) -- AMG TODO
+                                       }
             IncorrectParent p g td gs -> failWithDcErr p g td gs
 
 
@@ -592,19 +593,22 @@ lookupChildrenExport spec_parent rdr_items =
 checkPatSynParent :: Name    -- ^ Alleged parent type constructor
                              -- User wrote T( P, Q )
                   -> Parent  -- The parent of P we discovered
-                  -> Name    -- ^ Either a
+                  -> Child   -- ^ Either a
                              --   a) Pattern Synonym Constructor
                              --   b) A pattern synonym selector
                   -> TcM ()  -- Fails if wrong parent
 checkPatSynParent _ (ParentIs {}) _
   = return ()
 
-checkPatSynParent parent NoParent mpat_syn
+checkPatSynParent parent NoParent child
   | isUnboundName parent -- Avoid an error cascade
   = return ()
 
   | otherwise
   = do { parent_ty_con <- tcLookupTyCon parent
+       ; let mpat_syn = case child of
+                          ChildName n -> n
+                          ChildField fl -> flSelector fl
        ; mpat_syn_thing <- tcLookupGlobal mpat_syn
 
         -- 1. Check that the Id was actually from a thing associated with patsyns
