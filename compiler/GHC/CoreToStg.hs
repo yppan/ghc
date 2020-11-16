@@ -364,7 +364,7 @@ coreToTopStgRhs dflags ccs this_mod (bndr, rhs)
 
 coreToStgExpr
         :: CoreExpr
-        -> CtsM StgExpr
+        -> CtsM SgStgExpr
 
 -- The second and third components can be derived in a simple bottom up pass, not
 -- dependent on any decisions about which variables will be let-no-escaped or
@@ -401,7 +401,7 @@ coreToStgExpr expr@(Lam _ _)
     let
         result_expr = case nonEmpty args' of
           Nothing     -> body'
-          Just args'' -> StgLam args'' body'
+          Just args'' -> XXStgExpr $ StgLam args'' body'
 
     return result_expr
 
@@ -628,7 +628,7 @@ coreToStgArgs (arg : args) = do         -- Non-type argument
 coreToStgLet
          :: CoreBind     -- bindings
          -> CoreExpr     -- body
-         -> CtsM StgExpr -- new let
+         -> CtsM SgStgExpr -- new let
 
 coreToStgLet bind body = do
     (bind2, body2)
@@ -654,7 +654,7 @@ coreToStgLet bind body = do
         = (binder, LetBound NestedLet (manifestArity rhs))
 
     vars_bind :: CoreBind
-              -> CtsM (StgBinding,
+              -> CtsM (SgStgBinding,
                        [(Id, HowBound)])  -- extension to environment
 
     vars_bind (NonRec binder rhs) = do
@@ -675,7 +675,7 @@ coreToStgLet bind body = do
               return (StgRec (binders `zip` rhss2), env_ext)
 
 coreToStgRhs :: (Id,CoreExpr)
-             -> CtsM StgRhs
+             -> CtsM SgStgRhs
 
 coreToStgRhs (bndr, rhs) = do
     new_rhs <- coreToStgExpr rhs
@@ -684,10 +684,10 @@ coreToStgRhs (bndr, rhs) = do
 -- Generate a top-level RHS. Any new cost centres generated for CAFs will be
 -- appended to `CollectedCCs` argument.
 mkTopStgRhs :: DynFlags -> Module -> CollectedCCs
-            -> Id -> StgExpr -> (StgRhs, CollectedCCs)
+            -> Id -> SgStgExpr -> (StgRhs, CollectedCCs)
 
 mkTopStgRhs dflags this_mod ccs bndr rhs
-  | StgLam bndrs body <- rhs
+  | XXStgExpr (StgLam bndrs body) <- rhs
   = -- StgLam can't have empty arguments, so not CAF
     ( StgRhsClosure noExtFieldSilent
                     dontCareCCS
@@ -736,9 +736,9 @@ mkTopStgRhs dflags this_mod ccs bndr rhs
 
 -- Generate a non-top-level RHS. Cost-centre is always currentCCS,
 -- see Note [Cost-centre initialization plan].
-mkStgRhs :: Id -> StgExpr -> StgRhs
+mkStgRhs :: Id -> SgStgExpr -> SgStgRhs
 mkStgRhs bndr rhs
-  | StgLam bndrs body <- rhs
+  | XXStgExpr (StgLam bndrs body) <- rhs
   = StgRhsClosure noExtFieldSilent
                   currentCCS
                   ReEntrant

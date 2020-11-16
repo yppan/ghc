@@ -235,7 +235,6 @@ tagSkeletonExpr (StgApp f args)
       -- argument occurrences, see "GHC.Stg.Lift.Analysis#arg_occs".
       | null args = unitVarSet f
       | otherwise = mkArgOccs args
-tagSkeletonExpr (StgLam _ _) = pprPanic "stgLiftLams" (text "StgLam")
 tagSkeletonExpr (StgCase scrut bndr ty alts)
   = (skel, arg_occs, StgCase scrut' bndr' ty alts')
   where

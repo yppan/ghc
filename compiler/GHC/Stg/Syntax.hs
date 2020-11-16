@@ -40,6 +40,9 @@ module GHC.Stg.Syntax (
         -- a set of synonyms for the lambda lifting parameterisation
         LlStgTopBinding, LlStgBinding, LlStgExpr, LlStgRhs, LlStgAlt,
 
+        -- a set of synonyms for the core to stg parameterisation
+        SgStgTopBinding, SgStgBinding, SgStgExpr, SgStgRhs, SgStgAlt,
+
         -- a set of synonyms to distinguish in- and out variants
         InStgArg,  InStgTopBinding,  InStgBinding,  InStgExpr,  InStgRhs,  InStgAlt,
         OutStgArg, OutStgTopBinding, OutStgBinding, OutStgExpr, OutStgRhs, OutStgAlt,
@@ -257,22 +260,6 @@ literals.
 {-
 ************************************************************************
 *                                                                      *
-StgLam
-*                                                                      *
-************************************************************************
-
-StgLam is used *only* during CoreToStg's work. Before CoreToStg has finished it
-encodes (\x -> e) as (let f = \x -> e in f) TODO: Encode this via an extension
-to GenStgExpr à la TTG.
--}
-
-  | StgLam
-        (NonEmpty (BinderP pass))
-        StgExpr    -- Body of lambda
-
-{-
-************************************************************************
-*                                                                      *
 GenStgExpr: case-expressions
 *                                                                      *
 ************************************************************************
@@ -445,6 +432,7 @@ data StgPass
   = Vanilla
   | LiftLams
   | CodeGen
+  | CoreToStg
 
 -- | Like 'GHC.Hs.Extension.NoExtField', but with an 'Outputable' instance that
 -- returns 'empty'.
@@ -466,23 +454,41 @@ noExtFieldSilent = NoExtFieldSilent
 type family BinderP (pass :: StgPass)
 type instance BinderP 'Vanilla = Id
 type instance BinderP 'CodeGen = Id
+type instance BinderP 'CoreToStg = Id
 
 type family XRhsClosure (pass :: StgPass)
 type instance XRhsClosure 'Vanilla = NoExtFieldSilent
 -- | Code gen needs to track non-global free vars
 type instance XRhsClosure 'CodeGen = DIdSet
+type instance XRhsClosure 'CoreToStg = NoExtFieldSilent
 
 type family XLet (pass :: StgPass)
 type instance XLet 'Vanilla = NoExtFieldSilent
 type instance XLet 'CodeGen = NoExtFieldSilent
+type instance XLet 'CoreToStg = NoExtFieldSilent
 
 type family XLetNoEscape (pass :: StgPass)
 type instance XLetNoEscape 'Vanilla = NoExtFieldSilent
 type instance XLetNoEscape 'CodeGen = NoExtFieldSilent
+type instance XLetNoEscape 'CoreToStg = NoExtFieldSilent
 
 type family XXStgExpr (pass :: StgPass)
 type instance XXStgExpr 'Vanilla = NoExtCon
 type instance XXStgExpr 'CodeGen = NoExtCon
+type instance XXStgExpr 'CoreToStg = StgLam
+
+data StgLam = StgLam
+    (NonEmpty Id)
+    StgExpr    -- Body of lambda
+
+instance Outputable StgLam where
+   ppr (StgLam bndrs body) = let ppr_list = brackets . fsep . punctuate comma
+      in sep
+          [ char '\\'
+              <+> ppr_list (map (pprBndr LambdaBind) (toList bndrs))
+              <+> text "->"
+          , pprStgExpr opts body
+          ]
 
 stgRhsArity :: StgRhs -> Int
 stgRhsArity (StgRhsClosure _ _ _ bndrs _)
@@ -548,6 +554,12 @@ type CgStgBinding    = GenStgBinding    'CodeGen
 type CgStgExpr       = GenStgExpr       'CodeGen
 type CgStgRhs        = GenStgRhs        'CodeGen
 type CgStgAlt        = GenStgAlt        'CodeGen
+
+type SgStgTopBinding = GenStgTopBinding 'CoreToStg
+type SgStgBinding    = GenStgBinding    'CoreToStg
+type SgStgExpr       = GenStgExpr       'CoreToStg
+type SgStgRhs        = GenStgRhs        'CoreToStg
+type SgStgAlt        = GenStgAlt        'CoreToStg
 
 {- Many passes apply a substitution, and it's very handy to have type
    synonyms to remind us whether or not the substitution has been applied.
@@ -718,11 +730,6 @@ pprStgExpr opts e = case e of
    StgApp func args     -> hang (ppr func) 4 (interppSP args)
    StgConApp con args _ -> hsep [ ppr con, brackets (interppSP args) ]
    StgOpApp op args _   -> hsep [ pprStgOp op, brackets (interppSP args)]
-   StgLam bndrs body    -> let ppr_list = brackets . fsep . punctuate comma
-                           in sep [ char '\\' <+> ppr_list (map (pprBndr LambdaBind) (toList bndrs))
-                                      <+> text "->"
-                                  , pprStgExpr opts body
-                                  ]
 
 -- special case: let v = <very specific thing>
 --               in

@@ -171,5 +171,4 @@ statExpr (StgCase expr _ _ alts)
     stat_alts alts
         = combineSEs (map statExpr [ e | (_,_,e) <- alts ])
 
-statExpr (StgLam {}) = panic "statExpr StgLam"
 statExpr (XStgExpr ext) = noExtCon ext
