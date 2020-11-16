@@ -958,30 +958,43 @@ filterImports iface decl_spec (Just (want_hiding, L l import_items))
     all_avails = mi_exports iface
 
         -- See Note [Dealing with imports]
-    imp_occ_env :: OccEnv (Name,    -- the name
-                           AvailInfo,   -- the export item providing the name
-                           Maybe Name)  -- the parent of associated types
-    imp_occ_env = mkOccEnv_C combine [ (occ, (n, a, Nothing))
+    imp_occ_env :: OccEnv (NameEnv (Child,    -- the name or field
+                           AvailInfo,   -- the export item providing it
+                           Maybe Name))   -- TODO comment
+    imp_occ_env = mkOccEnv_C (plusNameEnv_C combine) [ (occName c, mkNameEnv [(childName c, (c, a, Nothing))])
                                      | a <- all_avails
-                                     , (n, occ) <- availNamesWithOccs a]
-      where
-        -- See Note [Dealing with imports]
-        -- 'combine' is only called for associated data types which appear
-        -- twice in the all_avails. In the example, we combine
-        --    T(T,T1,T2,T3) and C(C,T)  to give   (T, T(T,T1,T2,T3), Just C)
-        -- NB: the AvailTC can have fields as well as data constructors (#12127)
-        combine (name1, a1@(AvailTC p1 _ _), mp1)
-                (name2, a2@(AvailTC p2 _ _), mp2)
-          = ASSERT2( name1 == name2 && isNothing mp1 && isNothing mp2
-                   , ppr name1 <+> ppr name2 <+> ppr mp1 <+> ppr mp2 )
-            if p1 == name1 then (name1, a1, Just p2)
-                           else (name1, a2, Just p1)
-        combine x y = pprPanic "filterImports/combine" (ppr x $$ ppr y)
+                                     , c <- availChildren a]
+    -- See Note [Dealing with imports]
+    -- 'combine' may be called for associated data types which appear
+    -- twice in the all_avails. In the example, we combine
+    --    T(T,T1,T2,T3) and C(C,T)  to give   (T, T(T,T1,T2,T3), Just C)
+    -- NB: the AvailTC can have fields as well as data constructors (#12127)
+    --
+    -- 'combine' may also be called for pattern synonyms which appear both
+    -- unassociated and associated (#11959)
+    combine :: (Child, AvailInfo, Maybe Name) -> (Child, AvailInfo, Maybe Name) -> (Child, AvailInfo, Maybe Name)
+    combine (ChildName name1, a1@(AvailTC p1 _ _), mb1)
+            (ChildName name2, a2@(AvailTC p2 _ _), mb2)
+      = ASSERT2( name1 == name2 && isNothing mb1 && isNothing mb2
+               , ppr name1 <+> ppr name2 <+> ppr mb1 <+> ppr mb2 )
+        if p1 == name1 then (ChildName name1, a1, Just p2)
+                       else (ChildName name1, a2, Just p1)
+    combine (c1, a1, mb1)
+            (c2, a2, mb2)
+      = ASSERT2( c1 == c2 && isNothing mb1 && isNothing mb2 && (isAvailTC a1 || isAvailTC a2)
+               , ppr c1 <+> ppr c2 <+> ppr a1 <+> ppr a2 <+> ppr mb1 <+> ppr mb2 )
+        if isAvailTC a1 then (c1, a1, Nothing) else (c2, a2, Nothing) -- AMG TODO: is Nothing right?
+
+    isAvailTC AvailTC{} = True
+    isAvailTC _ = False
 
     lookup_name :: IE GhcPs -> RdrName -> IELookupM (Name, AvailInfo, Maybe Name)
     lookup_name ie rdr
        | isQual rdr              = failLookupWith (QualImportError rdr)
-       | Just succ <- mb_success = return succ
+       | Just succ <- mb_success = case nameEnvElts succ of
+                                     [(ChildName n,a,x)] -> return (n, a, x)
+                                     [(ChildField fl,a,x)] -> return (flSelector fl, a, x)
+                                     xs -> failLookupWith (AmbiguousImport rdr (map sndOf3 xs))
        | otherwise               = failLookupWith (BadImport ie)
       where
         mb_success = lookupOccEnv imp_occ_env (rdrNameOcc rdr)
@@ -1011,6 +1024,7 @@ filterImports iface decl_spec (Just (want_hiding, L l import_items))
               BadImport ie  -> badImportItemErr iface decl_spec ie all_avails
               IllegalImport -> illegalImportItemErr
               QualImportError rdr -> qualImportItemErr rdr
+              AmbiguousImport rdr xs -> ambiguousImportItemErr rdr xs
 
         -- For each import item, we convert its RdrNames to Names,
         -- and at the same time construct an AvailInfo corresponding
@@ -1152,6 +1166,7 @@ data IELookupError
   = QualImportError RdrName
   | BadImport (IE GhcPs)
   | IllegalImport
+  | AmbiguousImport RdrName [AvailInfo] -- e.g. a duplicated field name as a top-level import
 
 failLookupWith :: IELookupError -> IELookupM a
 failLookupWith err = Failed err
@@ -1757,6 +1772,15 @@ qualImportItemErr :: RdrName -> SDoc
 qualImportItemErr rdr
   = hang (text "Illegal qualified name in import item:")
        2 (ppr rdr)
+
+ambiguousImportItemErr :: RdrName -> [AvailInfo] -> SDoc
+ambiguousImportItemErr rdr avails
+  = hang (text "Ambiguous name" <+> quotes (ppr rdr) <+> text "in import item. It could refer to:")
+       2 (vcat (map ppr_avail avails))
+  where
+    ppr_avail (AvailTC parent _ _) = ppr parent <> parens (ppr rdr)
+    ppr_avail (Avail name)         = ppr name
+    ppr_avail (AvailFL fl)         = ppr fl
 
 pprImpDeclSpec :: ModIface -> ImpDeclSpec -> SDoc
 pprImpDeclSpec iface decl_spec =
