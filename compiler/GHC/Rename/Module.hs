@@ -2409,7 +2409,8 @@ extendPatSynEnv val_decls local_fix_env thing = do {
       = do
           bnd_name <- newTopSrcBinder (L bind_loc n)
           let field_occs = map ((\ f -> L (getLoc (rdrNameFieldOcc f)) f) . recordPatSynSelectorId) as
-          flds     <- mapM (newRecordSelector False [bnd_name]) field_occs
+          overload_ok <- xoptM LangExt.DuplicateRecordFields
+          flds <- mapM (newRecordSelector overload_ok [bnd_name]) field_occs
           return ((bnd_name, flds): names)
       | L bind_loc (PatSynBind _ (PSB { psb_id = L _ n})) <- bind
       = do

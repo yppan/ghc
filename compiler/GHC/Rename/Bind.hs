@@ -47,6 +47,7 @@ import GHC.Rename.Utils ( HsDocContext(..), mapFvRn, extendTyVarEnvFVRn
                         , addNoNestedForallsContextsErr, checkInferredVars )
 import GHC.Driver.Session
 import GHC.Unit.Module
+import GHC.Types.FieldLabel
 import GHC.Types.Name
 import GHC.Types.Name.Env
 import GHC.Types.Name.Set
@@ -696,9 +697,10 @@ rnPatSynBind sig_fn bind@(PSB { psb_id = L l name
                       ; let rnRecordPatSynField
                               (RecordPatSynField { recordPatSynSelectorId = visible
                                                  , recordPatSynPatVar = hidden })
-                              = do { visible' <- lookupTopBndrRn (unLoc (rdrNameFieldOcc visible)) -- AMG TODO?
+                              = do { fls <- lookupConstructorFields name -- AMG TODO share field label env
+                                   ; let visible' = lookupField (mkFsEnv [ (flLabel fl, fl) | fl <- fls ]) visible
                                    ; hidden'  <- lookupPatSynBndr hidden
-                                   ; return $ RecordPatSynField { recordPatSynSelectorId = FieldOcc visible' (rdrNameFieldOcc visible)
+                                   ; return $ RecordPatSynField { recordPatSynSelectorId = visible'
                                                                 , recordPatSynPatVar = hidden' } }
                       ; names <- mapM rnRecordPatSynField  vars
                       ; return ( (pat', RecCon names)
