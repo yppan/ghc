@@ -18,14 +18,17 @@ module GHC.Types.Avail (
     availFlds,
     availsNamesWithOccs,
     availNamesWithOccs,
+    availChildren,
     stableAvailCmp,
     plusAvail,
     trimAvail,
     filterAvail,
     filterAvails,
-    nubAvails
+    nubAvails,
 
-
+    Child(..),
+    childName,
+    childSrcSpan
   ) where
 
 import GHC.Prelude
@@ -33,6 +36,7 @@ import GHC.Prelude
 import GHC.Types.Name
 import GHC.Types.Name.Env
 import GHC.Types.Name.Set
+import GHC.Types.SrcLoc
 
 import GHC.Types.FieldLabel
 import GHC.Utils.Binary
@@ -209,6 +213,34 @@ availNamesWithOccs (AvailFL fl) = [(flSelector fl, mkVarOccFS (flLabel fl))]
 availNamesWithOccs (AvailTC _ ns fs)
   = [ (n, nameOccName n) | n <- ns ] ++
     [ (flSelector fl, mkVarOccFS (flLabel fl)) | fl <- fs ]
+
+
+availChildren :: AvailInfo -> [Child]
+availChildren (Avail n) = [ChildName n]
+availChildren (AvailFL fl) = [ChildField fl]
+availChildren (AvailTC _ ns fs) = map ChildName ns ++ map ChildField fs
+
+
+data Child = ChildName Name
+           | ChildField FieldLabel
+           deriving (Data, Eq)
+
+instance Outputable Child where
+  ppr (ChildName   n) = ppr n
+  ppr (ChildField fl) = ppr fl
+
+instance HasOccName Child where
+  occName (ChildName name) = occName name
+  occName (ChildField fl)  = occName fl
+
+childName :: Child -> Name
+childName (ChildName name) = name
+childName (ChildField fl)  = flSelector fl
+
+childSrcSpan :: Child -> SrcSpan
+childSrcSpan (ChildName name) = nameSrcSpan name
+childSrcSpan (ChildField fl)  = nameSrcSpan (flSelector fl)
+
 
 -- -----------------------------------------------------------------------------
 -- Utility

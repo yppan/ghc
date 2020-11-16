@@ -491,18 +491,6 @@ data GlobalRdrElt
          -- INVARIANT: either gre_lcl = True or gre_imp is non-empty
          -- See Note [GlobalRdrElt provenance]
 
-data Child = ChildName Name
-           | ChildField FieldLabel
-           deriving (Data, Eq)
-
-instance Outputable Child where
-  ppr (ChildName   n) = ppr n
-  ppr (ChildField fl) = ppr fl
-
-instance HasOccName Child where
-  occName (ChildName name) = occName name
-  occName (ChildField fl)  = occName fl
-
 -- | The children of a Name are the things that are abbreviated by the ".."
 --   notation in export lists.  See Note [Parents]
 data Parent = NoParent
@@ -681,10 +669,6 @@ gre_name :: GlobalRdrElt -> Name
 gre_name gre = case gre_child gre of
                  ChildName name -> name
                  ChildField fl  -> flSelector fl
-
-childSrcSpan :: Child -> SrcSpan
-childSrcSpan (ChildName name) = nameSrcSpan name
-childSrcSpan (ChildField fl)  = nameSrcSpan (flSelector fl)
 
 -- | The SrcSpan of the name pointed to by the GRE.
 greDefinitionSrcSpan :: GlobalRdrElt -> SrcSpan
