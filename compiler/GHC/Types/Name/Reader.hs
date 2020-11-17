@@ -46,7 +46,8 @@ module GHC.Types.Name.Reader (
         GlobalRdrEnv, emptyGlobalRdrEnv, mkGlobalRdrEnv, plusGlobalRdrEnv,
         lookupGlobalRdrEnv, extendGlobalRdrEnv, greOccName, shadowNames,
         pprGlobalRdrEnv, globalRdrEnvElts,
-        lookupGRE_RdrName, lookupGRE_Name, lookupGRE_FieldLabel,
+        lookupGRE_RdrName, lookupGRE_Name,
+        lookupGRE_Child, lookupGRE_FieldLabel,
         lookupGRE_Name_OccName,
         getGRE_NameQualifier_maybes,
         transformGREs, pickGREs, pickGREsModExp,
@@ -832,6 +833,13 @@ lookupGRE_Name :: GlobalRdrEnv -> Name -> Maybe GlobalRdrElt
 -- scope with the same 'OccName'.
 lookupGRE_Name env name
   = lookupGRE_Name_OccName env name (nameOccName name)
+
+lookupGRE_Child :: GlobalRdrEnv -> Child -> Maybe GlobalRdrElt
+-- ^ Look for precisely this 'Child' in the environment.  This tests
+-- whether it is in scope, ignoring anything else that might be in
+-- scope with the same 'OccName'.
+lookupGRE_Child env child
+  = lookupGRE_Name_OccName env (childName child) (occName child)
 
 lookupGRE_FieldLabel :: GlobalRdrEnv -> FieldLabel -> Maybe GlobalRdrElt
 -- ^ Look for a particular record field selector in the environment, where the

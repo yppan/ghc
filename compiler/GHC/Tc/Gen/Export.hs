@@ -147,7 +147,7 @@ accumExports f = fmap (catMaybes . snd) . mapAccumLM f' emptyExportAccum
             Just (Just (acc', y)) -> (acc', Just y)
             _                     -> (acc, Nothing)
 
-type ExportOccMap = OccEnv (Name, IE GhcPs)
+type ExportOccMap = OccEnv (Child, IE GhcPs)
         -- Tracks what a particular exported OccName
         --   in an export list refers to, and which item
         --   it came from.  It's illegal to export two distinct things
@@ -667,40 +667,47 @@ checkPatSynParent parent NoParent child
 check_occs :: IE GhcPs -> ExportOccMap -> [AvailInfo]
            -> RnM ExportOccMap
 check_occs ie occs avails
-  -- 'names' and 'fls' are the entities specified by 'ie'
-  = foldlM check occs names_with_occs
+  -- 'avails' are the entities specified by 'ie'
+  = foldlM check occs children
   where
-    -- Each Name specified by 'ie', paired with the OccName used to
-    -- refer to it in the GlobalRdrEnv
-    -- (see Note [Representing fields in AvailInfo] in GHC.Types.Avail).
-    --
-    -- We check for export clashes using the selector Name, but need
-    -- the field label OccName for presenting error messages.
-    names_with_occs = availsNamesWithOccs avails
+    children = concatMap availChildren avails
 
-    check occs (name, occ)
-      = case lookupOccEnv occs name_occ of
-          Nothing -> return (extendOccEnv occs name_occ (name, ie))
+    -- Check for distinct children exported with the same OccName (an error) or
+    -- for duplicate exports of the same child (a warning).
+    check :: ExportOccMap -> Child -> RnM ExportOccMap
+    check occs child
+      = case try_insert occs child of
+          Right occs' -> return occs'
 
-          Just (name', ie')
-            | name == name'   -- Duplicate export
+          Left (child', ie')
+            | childName child == childName child'   -- Duplicate export
             -- But we don't want to warn if the same thing is exported
             -- by two different module exports. See ticket #4478.
             -> do { warnIfFlag Opt_WarnDuplicateExports
-                               (not (dupExport_ok name ie ie'))
-                               (dupExportWarn occ ie ie')
+                               (not (dupExport_ok child ie ie'))
+                               (dupExportWarn child ie ie')
                   ; return occs }
 
             | otherwise    -- Same occ name but different names: an error
             ->  do { global_env <- getGlobalRdrEnv ;
-                     addErr (exportClashErr global_env occ name' name ie' ie) ;
+                     addErr (exportClashErr global_env child' child ie' ie) ;
                      return occs }
+
+    -- Try to insert a child into the map, returning Left if there is something
+    -- already exported with the same OccName
+    try_insert :: ExportOccMap -> Child -> Either (Child, IE GhcPs) ExportOccMap
+    try_insert occs child
+      = case lookupOccEnv occs name_occ of
+          Nothing -> Right (extendOccEnv occs name_occ (child, ie))
+          Just x  -> Left x
       where
-        name_occ = nameOccName name
+        -- For fields, we check for export clashes using the (OccName of the)
+        -- selector Name
+        name_occ = nameOccName (childName child)
 
 
-dupExport_ok :: Name -> IE GhcPs -> IE GhcPs -> Bool
--- The Name is exported by both IEs. Is that ok?
+dupExport_ok :: Child -> IE GhcPs -> IE GhcPs -> Bool
+-- The Child is exported by both IEs. Is that ok?
 -- "No"  iff the name is mentioned explicitly in both IEs
 --        or one of the IEs mentions the name *alone*
 -- "Yes" otherwise
@@ -726,13 +733,13 @@ dupExport_ok :: Name -> IE GhcPs -> IE GhcPs -> Bool
 --        import Foo
 --        data instance T Int = TInt
 
-dupExport_ok n ie1 ie2
+dupExport_ok child ie1 ie2
   = not (  single ie1 || single ie2
         || (explicit_in ie1 && explicit_in ie2) )
   where
     explicit_in (IEModuleContents {}) = False                   -- module M
     explicit_in (IEThingAll _ r)
-      = nameOccName n == rdrNameOcc (ieWrappedName $ unLoc r)  -- T(..)
+      = occName child == rdrNameOcc (ieWrappedName $ unLoc r)  -- T(..)
     explicit_in _              = True
 
     single IEVar {}      = True
@@ -786,9 +793,9 @@ exportItemErr export_item
           text "attempts to export constructors or class methods that are not visible here" ]
 
 
-dupExportWarn :: OccName -> IE GhcPs -> IE GhcPs -> SDoc
-dupExportWarn occ_name ie1 ie2
-  = hsep [quotes (ppr occ_name),
+dupExportWarn :: Child -> IE GhcPs -> IE GhcPs -> SDoc
+dupExportWarn child ie1 ie2
+  = hsep [quotes (ppr child),
           text "is exported by", quotes (ppr ie1),
           text "and",            quotes (ppr ie2)]
 
@@ -816,32 +823,37 @@ failWithDcErr parent thing thing_doc parents = do
     tyThingCategory' i = tyThingCategory i
 
 
-exportClashErr :: GlobalRdrEnv -> OccName
-               -> Name -> Name
+exportClashErr :: GlobalRdrEnv
+               -> Child -> Child
                -> IE GhcPs -> IE GhcPs
                -> MsgDoc
-exportClashErr global_env occ name1 name2 ie1 ie2
+exportClashErr global_env child1 child2 ie1 ie2
   = vcat [ text "Conflicting exports for" <+> quotes (ppr occ) <> colon
-         , ppr_export ie1' name1'
-         , ppr_export ie2' name2' ]
+         , ppr_export child1' gre1' ie1'
+         , ppr_export child2' gre2' ie2'
+         ]
   where
-    ppr_export ie name = nest 3 (hang (quotes (ppr ie) <+> text "exports" <+>
-                                       quotes (ppr_name name))
-                                    2 (pprNameProvenance (get_gre name)))
+    occ = occName child1
+
+    ppr_export child gre ie = nest 3 (hang (quotes (ppr ie) <+> text "exports" <+>
+                                            quotes (ppr_name child))
+                                        2 (pprNameProvenance gre))
 
     -- DuplicateRecordFields means that nameOccName might be a mangled
     -- $sel-prefixed thing, in which case show the correct OccName alone
-    ppr_name name
-      | nameOccName name == occ = ppr name
-      | otherwise               = ppr occ
+    -- (but otherwise show the Name so it will have a module qualifier)
+    ppr_name (ChildField fl) | flIsOverloaded fl = ppr fl
+                             | otherwise         = ppr (flSelector fl)
+    ppr_name (ChildName name) = ppr name
 
     -- get_gre finds a GRE for the Name, so that we can show its provenance
-    get_gre name
-        = fromMaybe (pprPanic "exportClashErr" (ppr name))
-                    (lookupGRE_Name_OccName global_env name occ)
-    get_loc name = greSrcSpan (get_gre name)
-    (name1', ie1', name2', ie2') =
-      case SrcLoc.leftmost_smallest (get_loc name1) (get_loc name2) of
-        LT -> (name1, ie1, name2, ie2)
-        GT -> (name2, ie2, name1, ie1)
+    gre1 = get_gre child1
+    gre2 = get_gre child2
+    get_gre child
+        = fromMaybe (pprPanic "exportClashErr" (ppr child))
+                    (lookupGRE_Child global_env child)
+    (child1', gre1', ie1', child2', gre2', ie2') =
+      case SrcLoc.leftmost_smallest (greSrcSpan gre1) (greSrcSpan gre2) of
+        LT -> (child1, gre1, ie1, child2, gre2, ie2)
+        GT -> (child2, gre2, ie2, child1, gre1, ie1)
         EQ -> panic "exportClashErr: clashing exports have idential location"

@@ -16,8 +16,6 @@ module GHC.Types.Avail (
     availName, availNames, availNonFldNames,
     availNamesWithSelectors,
     availFlds,
-    availsNamesWithOccs,
-    availNamesWithOccs,
     availChildren,
     stableAvailCmp,
     plusAvail,
@@ -168,8 +166,8 @@ availsToNameEnv avails = foldr add emptyNameEnv avails
 -- | Just the main name made available, i.e. not the available pieces
 -- of type or class brought into scope by the 'GenAvailInfo'
 availName :: AvailInfo -> Name
-availName (Avail n)     = n
-availName (AvailFL f)     = flSelector f -- AMG TODO: dubious
+availName (Avail n)       = n
+availName (AvailFL f)     = flSelector f
 availName (AvailTC n _ _) = n
 
 -- | All names made available by the availability information (excluding overloaded selectors)
@@ -196,32 +194,15 @@ availFlds (Avail {})       = []
 availFlds (AvailFL f)      = [f]
 availFlds (AvailTC _ _ fs) = fs
 
-availsNamesWithOccs :: [AvailInfo] -> [(Name, OccName)]
-availsNamesWithOccs = concatMap availNamesWithOccs
-
--- | 'Name's made available by the availability information, paired with
--- the 'OccName' used to refer to each one.
---
--- When @DuplicateRecordFields@ is in use, the 'Name' may be the
--- mangled name of a record selector (e.g. @$sel:foo:MkT@) while the
--- 'OccName' will be the label of the field (e.g. @foo@).
---
--- See Note [Representing fields in AvailInfo].
-availNamesWithOccs :: AvailInfo -> [(Name, OccName)]
-availNamesWithOccs (Avail n) = [(n, nameOccName n)]
-availNamesWithOccs (AvailFL fl) = [(flSelector fl, mkVarOccFS (flLabel fl))]
-availNamesWithOccs (AvailTC _ ns fs)
-  = [ (n, nameOccName n) | n <- ns ] ++
-    [ (flSelector fl, mkVarOccFS (flLabel fl)) | fl <- fs ]
-
-
+-- | Children made available by the availability information.  See Note [Children].
 availChildren :: AvailInfo -> [Child]
-availChildren (Avail n) = [ChildName n]
-availChildren (AvailFL fl) = [ChildField fl]
+availChildren (Avail n)         = [ChildName n]
+availChildren (AvailFL fl)      = [ChildField fl]
 availChildren (AvailTC _ ns fs) = map ChildName ns ++ map ChildField fs
 
 
-data Child = ChildName Name
+-- See Note [Children]
+data Child = ChildName  Name
            | ChildField FieldLabel
            deriving (Data, Eq)
 
@@ -240,6 +221,13 @@ childName (ChildField fl)  = flSelector fl
 childSrcSpan :: Child -> SrcSpan
 childSrcSpan (ChildName name) = nameSrcSpan name
 childSrcSpan (ChildField fl)  = nameSrcSpan (flSelector fl)
+
+{-
+Note [Children]
+~~~~~~~~~~~~~~~
+AMG TODO: write Note
+
+-}
 
 
 -- -----------------------------------------------------------------------------
