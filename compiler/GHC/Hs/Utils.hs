@@ -1202,7 +1202,7 @@ hsPatSynSelectors (XValBindsLR (NValBinds binds _))
 addPatSynSelector :: forall p. UnXRec p => LHsBind p -> [FieldOcc p] -> [FieldOcc p]
 addPatSynSelector bind sels
   | PatSynBind _ (PSB { psb_args = RecCon as }) <- unXRec @p bind
-  = map (recordPatSynSelectorId) as ++ sels
+  = map recordPatSynField as ++ sels
   | otherwise = sels
 
 getPatSynBinds :: forall id. UnXRec id

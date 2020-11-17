@@ -1888,7 +1888,7 @@ rep_bind (L loc (PatSynBind _ (PSB { psb_id   = syn
     mkGenArgSyms (InfixCon arg1 arg2) = mkGenSyms [unLoc arg1, unLoc arg2]
     mkGenArgSyms (RecCon fields)
       = do { let pats = map (unLoc . recordPatSynPatVar) fields
-                 sels = map (extFieldOcc . recordPatSynSelectorId) fields
+                 sels = map (extFieldOcc . recordPatSynField) fields
            ; ss <- mkGenSyms sels
            ; return $ replaceNames (zip sels pats) ss }
 
@@ -1920,7 +1920,7 @@ repPatSynArgs (InfixCon arg1 arg2)
 repPatSynArgs (RecCon fields)
   = do { sels' <- repList nameTyConName (lookupOcc . extFieldOcc) sels
        ; repRecordPatSynArgs sels' }
-  where sels = map recordPatSynSelectorId fields
+  where sels = map recordPatSynField fields
 
 repPrefixPatSynArgs :: Core [TH.Name] -> MetaM (Core (M TH.PatSynArgs))
 repPrefixPatSynArgs (MkC nms) = rep2 prefixPatSynName [nms]

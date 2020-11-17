@@ -57,6 +57,7 @@ import GHC.Types.Id.Make
 import GHC.Tc.TyCl.Utils
 import GHC.Core.ConLike
 import GHC.Types.FieldLabel
+import GHC.Rename.Env
 import GHC.Data.Bag
 import GHC.Utils.Misc
 import GHC.Utils.Error
@@ -95,7 +96,7 @@ recoverPSB (PSB { psb_id = L _ name
       ; gbl_env <- tcExtendGlobalEnv [placeholder] getGblEnv
       ; return (emptyBag, gbl_env) }
   where
-    (_arg_names, _rec_fields, is_infix) = collectPatSynArgInfo details
+    (_arg_names, is_infix) = collectPatSynArgInfo details
     mk_placeholder matcher_name
       = mkPatSyn name is_infix
                         ([mkTyVarBinder SpecifiedSpec alphaTyVar], []) ([], [])
@@ -144,7 +145,7 @@ tcInferPatSynDecl (PSB { psb_id = lname@(L _ name), psb_args = details
   = addPatSynCtxt lname $
     do { traceTc "tcInferPatSynDecl {" $ ppr name
 
-       ; let (arg_names, rec_fields, is_infix) = collectPatSynArgInfo details
+       ; let (arg_names, is_infix) = collectPatSynArgInfo details
        ; (tclvl, wanted, ((lpat', args), pat_ty))
             <- pushLevelAndCaptureConstraints  $
                tcInferPat PatSyn lpat          $
@@ -184,6 +185,7 @@ tcInferPatSynDecl (PSB { psb_id = lname@(L _ name), psb_args = details
        ; mapM_ dependentArgErr bad_args
 
        ; traceTc "tcInferPatSynDecl }" $ (ppr name $$ ppr ex_tvs)
+       ; rec_fields <- lookupConstructorFields name
        ; tc_patsyn_finish lname dir is_infix lpat'
                           (mkTyVarBinders InferredSpec univ_tvs
                             , req_theta,  ev_binds, req_dicts)
@@ -355,7 +357,7 @@ tcCheckPatSynDecl psb@PSB{ psb_id = lname@(L _ name), psb_args = details
               , ppr explicit_ex_bndrs, ppr prov_theta, ppr sig_body_ty ]
 
        ; let decl_arity = length arg_names
-             (arg_names, rec_fields, is_infix) = collectPatSynArgInfo details
+             (arg_names, is_infix) = collectPatSynArgInfo details
 
        ; (arg_tys, pat_ty) <- case tcSplitFunTysN decl_arity sig_body_ty of
                                  Right stuff  -> return stuff
@@ -440,6 +442,7 @@ tcCheckPatSynDecl psb@PSB{ psb_id = lname@(L _ name), psb_args = details
 
        ; traceTc "tcCheckPatSynDecl }" $ ppr name
 
+       ; rec_fields <- lookupConstructorFields name
        ; tc_patsyn_finish lname dir is_infix lpat'
                           (skol_univ_bndrs, skol_req_theta, ev_binds, req_dicts)
                           (skol_ex_bndrs, mkTyVarTys ex_tvs', skol_prov_theta, prov_dicts)
@@ -623,24 +626,12 @@ a pattern synonym.  What about the /building/ side?
 -}
 
 collectPatSynArgInfo :: HsPatSynDetails GhcRn
-                     -> ([Name], [FieldLabel], Bool)
+                     -> ([Name], Bool)
 collectPatSynArgInfo details =
   case details of
-    PrefixCon _ names    -> (map unLoc names, [], False)
-    InfixCon name1 name2 -> (map unLoc [name1, name2], [], True)
-    RecCon names         -> (vars, sels, False)
-                         where
-                            (vars, sels) = unzip (map splitRecordPatSyn names)
-  where
-    splitRecordPatSyn :: RecordPatSynField GhcRn
-                      -> (Name, FieldLabel)
-    splitRecordPatSyn (RecordPatSynField
-                       { recordPatSynPatVar     = L _ patVar
-                       , recordPatSynSelectorId = FieldOcc selId (L _ rdr) })
-      = (patVar, FieldLabel { flLabel = occNameFS (occName rdr)
-                            , flIsOverloaded = False -- AMG TODO: use field env?
-                            , flSelector = selId
-                            })
+    PrefixCon _ names    -> (map unLoc names, False)
+    InfixCon name1 name2 -> (map unLoc [name1, name2], True)
+    RecCon names         -> (map (unLoc . recordPatSynPatVar) names, False)
 
 addPatSynCtxt :: Located Name -> TcM a -> TcM a
 addPatSynCtxt (L loc name) thing_inside
