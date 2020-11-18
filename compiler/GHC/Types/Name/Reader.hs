@@ -57,7 +57,7 @@ module GHC.Types.Name.Reader (
         greRdrNames, greSrcSpan, greQualModName,
         gresToAvailInfo,
         greDefinitionModule, greDefinitionSrcSpan,
-        gre_name, -- AMG TODO: can we get rid of export?
+        gre_name,
 
         -- ** Global 'RdrName' mapping elements: 'GlobalRdrElt', 'Provenance', 'ImportSpec'
         GlobalRdrElt(..), isLocalGRE, isRecFldGRE, isOverloadedRecFldGRE, greLabel,
@@ -750,10 +750,10 @@ gresToAvailInfo gres
 
         comb :: GlobalRdrElt -> AvailInfo -> AvailInfo
         comb _ (Avail n) = Avail n -- Duplicated name, should not happen
-        comb _ (AvailFL fl) = AvailFL fl -- TODO: shouldn't happen either?
+        comb _ (AvailFL fl) = AvailFL fl -- AMG TODO: shouldn't happen either?
         comb gre (AvailTC m ns fls)
           = case (gre_par gre, gre_child gre) of
-              (NoParent, ChildName me)    -> AvailTC m (me:ns) fls -- Not sure this ever happens -- TODO: AvailTC invariant?
+              (NoParent, ChildName me)    -> AvailTC m (me:ns) fls -- Not sure this ever happens -- AMG TODO: AvailTC invariant?
               (NoParent, ChildField fl)   -> AvailTC m ns (fl:fls)
               (ParentIs {}, ChildName me) -> AvailTC m (insertChildIntoChildren m ns me) fls
               (ParentIs {}, ChildField fl) -> AvailTC m ns (fl:fls)

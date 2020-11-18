@@ -528,8 +528,8 @@ lookupChildrenExport spec_parent rdr_items =
                                ; return (Left (L l (IEName (L l ub))))}
             FoundChild par child -> do { checkPatSynParent spec_parent par child
                                        ; return $ case child of
-                                           ChildField fl -> Right (L (getLoc n) fl)
-                                           ChildName  name -> Left (replaceLWrappedName n name) -- AMG TODO
+                                           ChildField fl   -> Right (L (getLoc n) fl)
+                                           ChildName  name -> Left (replaceLWrappedName n name)
                                        }
             IncorrectParent p g td gs -> failWithDcErr p g td gs
 

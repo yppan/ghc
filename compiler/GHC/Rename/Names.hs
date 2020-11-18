@@ -960,8 +960,9 @@ filterImports iface decl_spec (Just (want_hiding, L l import_items))
         -- See Note [Dealing with imports]
     imp_occ_env :: OccEnv (NameEnv (Child,    -- the name or field
                            AvailInfo,   -- the export item providing it
-                           Maybe Name))   -- TODO comment
-    imp_occ_env = mkOccEnv_C (plusNameEnv_C combine) [ (occName c, mkNameEnv [(childName c, (c, a, Nothing))])
+                           Maybe Name))   -- the parent of associated types
+    imp_occ_env = mkOccEnv_C (plusNameEnv_C combine)
+                             [ (occName c, mkNameEnv [(childName c, (c, a, Nothing))])
                                      | a <- all_avails
                                      , c <- availChildren a]
     -- See Note [Dealing with imports]
@@ -983,7 +984,8 @@ filterImports iface decl_spec (Just (want_hiding, L l import_items))
             (c2, a2, mb2)
       = ASSERT2( c1 == c2 && isNothing mb1 && isNothing mb2 && (isAvailTC a1 || isAvailTC a2)
                , ppr c1 <+> ppr c2 <+> ppr a1 <+> ppr a2 <+> ppr mb1 <+> ppr mb2 )
-        if isAvailTC a1 then (c1, a1, Nothing) else (c2, a2, Nothing) -- AMG TODO: is Nothing right?
+        if isAvailTC a1 then (c1, a1, Nothing)
+                        else (c1, a2, Nothing)
 
     isAvailTC AvailTC{} = True
     isAvailTC _ = False

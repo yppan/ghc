@@ -175,7 +175,7 @@ checkHsigIface tcg_env gr sig_iface
       -- be a reexport.  In this case, make sure the 'Name' of the
       -- reexport matches the 'Name exported here.
       | [gre] <- lookupGlobalRdrEnv gr (nameOccName name) = do
-        let name' = gre_name gre -- AMG TODO this looks fishy
+        let name' = gre_name gre
         when (name /= name') $ do
             -- See Note [Error reporting bad reexport]
             -- TODO: Actually this error swizzle doesn't work

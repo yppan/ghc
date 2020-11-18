@@ -765,8 +765,7 @@ lookupSubBndrOcc warn_if_deprec the_parent doc rdr_name = do
       lookupSubBndrOcc_helper True warn_if_deprec the_parent rdr_name
   case res of
     NameNotFound -> return (Left (unknownSubordinateErr doc rdr_name))
-    FoundChild _p (ChildName n)   -> return (Right n)
-    FoundChild _p (ChildField fl) -> return (Right (flSelector fl)) -- AMG TODO: really?
+    FoundChild _p child -> return (Right (childName child))
     IncorrectParent {}
          -- See [Mismatched class methods and associated type families]
          -- in TcInstDecls.

@@ -22,7 +22,9 @@ import GHC.Tc.Utils.TcType
 import GHC.Core.Type
 import GHC.Core.DataCon
 import GHC.Types.Name
-import GHC.Types.Name.Reader ( pprNameProvenance , GlobalRdrElt (..), globalRdrEnvElts, gre_name )
+import GHC.Types.Name.Reader ( pprNameProvenance , GlobalRdrElt (..)
+                             , globalRdrEnvElts, gre_name
+                             , isOverloadedRecFldGRE )
 import GHC.Builtin.Names ( gHC_ERR )
 import GHC.Types.Id
 import GHC.Types.Var.Set
@@ -470,10 +472,12 @@ pprHoleFit (HFDC sWrp sWrpVars sTy sProv sMs) (HoleFit {..}) =
        holeVs = sep $ map (parens . (text "_" <+> dcolon <+>) . ppr) hfMatches
        holeDisp = if sMs then holeVs
                   else sep $ replicate (length hfMatches) $ text "_"
-       occDisp = pprPrefixOcc $ case hfCand of
-                                  GreHFCand gre   -> occName gre
-                                  NameHFCand name -> occName name
-                                  IdHFCand id_    -> occName id_
+       occDisp = case hfCand of
+                    -- AMG TODO: make OutputableBndr GlobalRdrElt instance that does the right thing?
+                   GreHFCand gre  | isOverloadedRecFldGRE gre -> pprPrefixOcc (occName gre)
+                                  | otherwise                 -> pprPrefixOcc (gre_name gre)
+                   NameHFCand name -> pprPrefixOcc name
+                   IdHFCand id_    -> pprPrefixOcc id_
        tyDisp = ppWhen sTy $ dcolon <+> ppr hfType
        has = not . null
        wrapDisp = ppWhen (has hfWrap && (sWrp || sWrpVars))
@@ -787,7 +791,7 @@ tcFilterHoleFits limit typed_hole ht@(hole_ty, _) candidates =
 #if __GLASGOW_HASKELL__ <= 810
                            IdHFCand id -> idName id
 #endif
-                           GreHFCand gre -> gre_name gre -- AMG TODO dubious
+                           GreHFCand gre -> gre_name gre
                            NameHFCand name -> name
           discard_it = go subs seen maxleft ty elts
           keep_it eid eid_ty wrp ms = go (fit:subs) (extendVarSet seen eid)
