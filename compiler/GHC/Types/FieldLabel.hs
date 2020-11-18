@@ -7,6 +7,9 @@
 % (c) Adam Gundry 2013-2015
 %
 
+Note [FieldLabel]
+~~~~~~~~~~~~~~~~~
+
 This module defines the representation of FieldLabels as stored in
 TyCons.  As well as a selector name, these have some extra structure
 to support the DuplicateRecordFields extension.
@@ -91,7 +94,7 @@ type FieldLabelEnv = DFastStringEnv FieldLabel
 
 type FieldLabel = FieldLbl Name
 
--- | Fields in an algebraic record type
+-- | Fields in an algebraic record type; see Note [FieldLabel].
 data FieldLbl a = FieldLabel {
       flLabel        :: FieldLabelString, -- ^ User-visible label of the field
       flIsOverloaded :: Bool,             -- ^ Was DuplicateRecordFields on

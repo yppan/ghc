@@ -465,7 +465,7 @@ type GlobalRdrEnv = OccEnv [GlobalRdrElt]
 -- These only get reported on lookup, not on construction
 --
 -- INVARIANT 1: All the members of the list have distinct
---              'gre_name' fields; that is, no duplicate Names
+--              'gre_child' fields; that is, no duplicate Names
 --
 -- INVARIANT 2: Imported provenance => Name is an ExternalName
 --              However LocalDefs can have an InternalName.  This
@@ -484,19 +484,17 @@ type GlobalRdrEnv = OccEnv [GlobalRdrElt]
 --
 -- An element of the 'GlobalRdrEnv'
 data GlobalRdrElt
-  = GRE { gre_child :: Child
-        , gre_par  :: Parent
+  = GRE { gre_child :: Child       -- ^ See Note [Children]
+        , gre_par  :: Parent       -- ^ See Note [Parents]
         , gre_lcl :: Bool          -- ^ True <=> the thing was defined locally
         , gre_imp :: [ImportSpec]  -- ^ In scope through these imports
     } deriving (Data, Eq)
          -- INVARIANT: either gre_lcl = True or gre_imp is non-empty
          -- See Note [GlobalRdrElt provenance]
 
--- | The children of a Name are the things that are abbreviated by the ".."
---   notation in export lists.  See Note [Parents]
+-- | See Note [Parents]
 data Parent = NoParent
             | ParentIs  { par_is :: Name }
-              -- ^ See Note [Parents for record fields]
             deriving (Eq, Data)
 
 instance Outputable Parent where
@@ -544,6 +542,7 @@ module that SOURCE-imported A.  Example (#7672):
 
 In A.hs, 'T' is locally bound, *and* imported as B.T.
 
+
 Note [Parents]
 ~~~~~~~~~~~~~~~~~
   Parent           Children
@@ -560,50 +559,34 @@ Note [Parents]
 ~~~~~~~~~~~~~~~~~~~~~~~~~
  Constructor      Meaning
  ~~~~~~~~~~~~~~~~~~~~~~~~
-  NoParent        Can not be bundled with a type constructor.
-  ParentIs n      Can be bundled with the type constructor corresponding to
-                  n.
-  FldParent       See Note [Parents for record fields]
+  NoParent        Not bundled with a type constructor.
+  ParentIs n      Bundled with the type constructor corresponding to n.
 
 
+Note [Children]
+~~~~~~~~~~~~~~~
+The children of a Name are the things that are abbreviated by the ".." notation
+in export lists.  See Note [Parents] above for a table of parent/child
+relationships.
 
+Children that a record fields must be represented using a FieldLabel rather than
+just a Name, because when -XDuplicateRecordFields is enabled the field label is
+different from the OccName of the selector function (see Note [FieldLabel] in
+GHC.Types.FieldLabel).  Thus we use the Child datatype to represent children
+that may be ordinary Names or FieldLabels.
 
-Note [Parents for record fields]
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-AMG TODO: update this outdated note
+Note that the OccName used when adding a GRE to the environment (greOccName) now
+depends on the child: for ChildField it is the field label, rather than the
+OccName of the selector.
 
-For record fields, in addition to the Name of the type constructor
-(stored in par_is), we use FldParent to store the field label.  This
-extra information is used for identifying overloaded record fields
-during renaming.
-
-In a definition arising from a normal module (without
--XDuplicateRecordFields), par_lbl will be Nothing, meaning that the
-field's label is the same as the OccName of the selector's Name.  The
-GlobalRdrEnv will contain an entry like this:
-
-    "x" |->  GRE x (FldParent T Nothing) LocalDef
-
-When -XDuplicateRecordFields is enabled for the module that contains
-T, the selector's Name will be mangled (see comments in GHC.Types.FieldLabel).
-Thus we store the actual field label in par_lbl, and the GlobalRdrEnv
-entry looks like this:
-
-    "x" |->  GRE $sel:x:MkT (FldParent T (Just "x")) LocalDef
-
-Note that the OccName used when adding a GRE to the environment
-(greOccName) now depends on the parent field: for FldParent it is the
-field label, if present, rather than the selector name.
-
-~~
-
-Record pattern synonym selectors are treated differently. Their parent
-information is `NoParent` in the module in which they are defined. This is because
-a pattern synonym `P` has no parent constructor either.
-
-However, if `f` is bundled with a type constructor `T` then whenever `f` is
-imported the parent will use the `Parent` constructor so the parent of `f` is
-now `T`.
+Pattern synonym constructors and record fields are unusual: their parent
+information is NoParent in the module in which they are defined.  However, a
+pattern synonym can be bundled with a type constructor on export, in which case
+whenever the pattern synonym is imported the parent will use the Parent
+constructor.  Thus the gre_child and gre_par fields are independent: a record
+pattern synonym may have children that are fields, even though it has no parent
+type constructor.  See also Note [Representing pattern synonym fields in AvailInfo]
+in GHC.Types.Avail.
 
 
 Note [Combining parents]
@@ -666,6 +649,8 @@ gresFromAvail prov_fn avail
           Just is -> GRE { gre_child = ChildField fl, gre_par = availParent avail
                          , gre_lcl = False, gre_imp = [is] }
 
+-- | The Name of the GRE's child.  Careful: the OccName of this Name is not
+-- necessarily the same as the greOccName (see Note [Children]).
 gre_name :: GlobalRdrElt -> Name
 gre_name gre = case gre_child gre of
                  ChildName name -> name
@@ -817,6 +802,7 @@ lookupGlobalRdrEnv env occ_name = case lookupOccEnv env occ_name of
 instance HasOccName GlobalRdrElt where
   occName = greOccName
 
+-- | See Note [Children]
 greOccName :: GlobalRdrElt -> OccName
 greOccName GRE{gre_child = ChildName n}   = nameOccName n
 greOccName GRE{gre_child = ChildField fl} = mkVarOccFS (flLabel fl)

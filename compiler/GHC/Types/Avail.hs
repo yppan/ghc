@@ -57,7 +57,7 @@ data AvailInfo
   = Avail Name
 
   -- | A field label in scope, without a parent type (see
-  -- Note [Representing fields in AvailInfo]).
+  -- Note [Representing pattern synonym fields in AvailInfo]).
   | AvailFL FieldLabel
 
   -- | A type or class in scope
@@ -69,7 +69,7 @@ data AvailInfo
   | AvailTC
        Name         -- ^ The name of the type or class
        [Name]       -- ^ The available pieces of type or class,
-                    -- excluding field selectors.
+                    -- excluding record fields.
        [FieldLabel] -- ^ The record fields of the type
                     -- (see Note [Representing fields in AvailInfo]).
 
@@ -82,6 +82,8 @@ type Avails = [AvailInfo]
 {-
 Note [Representing fields in AvailInfo]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+See also Note [FieldLabel] in GHC.Types.FieldLabel.
+
 When -XDuplicateRecordFields is disabled (the normal case), a
 datatype like
 
@@ -127,6 +129,35 @@ them from the same module (even with `-XDuplicateRecordfields`
 enabled), because they would be represented identically.  The
 workaround here is to enable `-XDuplicateRecordFields` on the defining
 modules.
+
+
+Note [Representing pattern synonym fields in AvailInfo]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Record pattern synonym fields cannot be represented using AvailTC like fields of
+normal record types (see Note [Representing fields in AvailInfo]), because they
+do not always have a parent type constructor.  Thus we represent them using the
+AvailFL constructor, which carries the underlying FieldLabel.
+
+Thus under -XDuplicateRecordFields -XPatternSynoynms, the declaration
+
+  pattern MkFoo{f} = Bar f
+
+gives rise to the AvailInfo
+
+  Avail MkFoo
+  AvailFL (FieldLabel "f" True $sel:f:MkFoo)
+
+However, if `f` is bundled with a type constructor `T` by using `T(MkFoo,f)` in
+an export list, then whenever `f` is imported the parent will be `T`,
+represented as
+
+  AvailTC T [T,MkFoo] [FieldLabel "f" True $sel:f:MkFoo]
+
+
+TODO: perhaps we should refactor AvailInfo like this?
+
+  data AvailInfo = AvailChild Child | AvailTC Name [Child]
+
 -}
 
 -- | Compare lexicographically
@@ -194,14 +225,15 @@ availFlds (Avail {})       = []
 availFlds (AvailFL f)      = [f]
 availFlds (AvailTC _ _ fs) = fs
 
--- | Children made available by the availability information.  See Note [Children].
+-- | Children made available by the availability information.
 availChildren :: AvailInfo -> [Child]
 availChildren (Avail n)         = [ChildName n]
 availChildren (AvailFL fl)      = [ChildField fl]
 availChildren (AvailTC _ ns fs) = map ChildName ns ++ map ChildField fs
 
 
--- See Note [Children]
+-- | Used where we may have an ordinary name or a record field label.
+-- See Note [Children] in GHC.Types.Name.Reader.
 data Child = ChildName  Name
            | ChildField FieldLabel
            deriving (Data, Eq)
@@ -221,13 +253,6 @@ childName (ChildField fl)  = flSelector fl
 childSrcSpan :: Child -> SrcSpan
 childSrcSpan (ChildName name) = nameSrcSpan name
 childSrcSpan (ChildField fl)  = nameSrcSpan (flSelector fl)
-
-{-
-Note [Children]
-~~~~~~~~~~~~~~~
-AMG TODO: write Note
-
--}
 
 
 -- -----------------------------------------------------------------------------
