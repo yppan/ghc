@@ -57,7 +57,7 @@ module GHC.Types.Name.Reader (
         greRdrNames, greSrcSpan, greQualModName,
         gresToAvailInfo,
         greDefinitionModule, greDefinitionSrcSpan,
-        gre_name,
+        gre_name, grePrintableName,
 
         -- ** Global 'RdrName' mapping elements: 'GlobalRdrElt', 'Provenance', 'ImportSpec'
         GlobalRdrElt(..), isLocalGRE, isRecFldGRE, isOverloadedRecFldGRE, greLabel,
@@ -655,6 +655,13 @@ gre_name :: GlobalRdrElt -> Name
 gre_name gre = case gre_child gre of
                  ChildName name -> name
                  ChildField fl  -> flSelector fl
+
+-- | A Name for the GRE's child suitable for output to the user.  Its OccName
+-- will be the greOccName.
+grePrintableName :: GlobalRdrElt -> Name
+grePrintableName gre = case gre_child gre of
+    ChildName name -> name
+    ChildField fl  -> fieldLabelPrintableName fl
 
 -- | The SrcSpan of the name pointed to by the GRE.
 greDefinitionSrcSpan :: GlobalRdrElt -> SrcSpan

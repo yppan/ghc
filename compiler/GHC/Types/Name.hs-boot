@@ -22,3 +22,4 @@ class NamedThing a where
 nameUnique :: Name -> Unique
 setNameUnique :: Name -> Unique -> Name
 nameOccName :: Name -> OccName
+tidyNameOcc :: Name -> OccName -> Name

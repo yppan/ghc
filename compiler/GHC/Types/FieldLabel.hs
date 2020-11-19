@@ -69,6 +69,7 @@ module GHC.Types.FieldLabel
    , FieldLbl(..)
    , FieldLabel
    , mkFieldLabelOccs
+   , fieldLabelPrintableName
    )
 where
 
@@ -134,3 +135,12 @@ mkFieldLabelOccs lbl dc is_overloaded
     str     = ":" ++ unpackFS lbl ++ ":" ++ occNameString dc
     sel_occ | is_overloaded = mkRecFldSelOcc str
             | otherwise     = mkVarOccFS lbl
+
+-- | Undo the name mangling described in Note [FieldLabel] to produce a Name
+-- that has the user-visible OccName (but the selector's unique).  This should
+-- be used only when generating output, when we want to show the label, but may
+-- need to qualify it with a module prefix.
+fieldLabelPrintableName :: FieldLabel -> Name
+fieldLabelPrintableName fl
+  | flIsOverloaded fl = tidyNameOcc (flSelector fl) (mkVarOccFS (flLabel fl))
+  | otherwise         = flSelector fl

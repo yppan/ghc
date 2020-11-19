@@ -23,8 +23,7 @@ import GHC.Core.Type
 import GHC.Core.DataCon
 import GHC.Types.Name
 import GHC.Types.Name.Reader ( pprNameProvenance , GlobalRdrElt (..)
-                             , globalRdrEnvElts, gre_name
-                             , isOverloadedRecFldGRE )
+                             , globalRdrEnvElts, gre_name, grePrintableName )
 import GHC.Builtin.Names ( gHC_ERR )
 import GHC.Types.Id
 import GHC.Types.Var.Set
@@ -473,9 +472,7 @@ pprHoleFit (HFDC sWrp sWrpVars sTy sProv sMs) (HoleFit {..}) =
        holeDisp = if sMs then holeVs
                   else sep $ replicate (length hfMatches) $ text "_"
        occDisp = case hfCand of
-                    -- AMG TODO: make OutputableBndr GlobalRdrElt instance that does the right thing?
-                   GreHFCand gre  | isOverloadedRecFldGRE gre -> pprPrefixOcc (occName gre)
-                                  | otherwise                 -> pprPrefixOcc (gre_name gre)
+                   GreHFCand gre   -> pprPrefixOcc (grePrintableName gre)
                    NameHFCand name -> pprPrefixOcc name
                    IdHFCand id_    -> pprPrefixOcc id_
        tyDisp = ppWhen sTy $ dcolon <+> ppr hfType
