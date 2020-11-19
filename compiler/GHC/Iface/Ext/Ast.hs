@@ -1891,8 +1891,8 @@ instance ToHie (Located (TyFamInstDecl GhcRn)) where
 
 instance HiePass p => ToHie (Context (FieldOcc (GhcPass p))) where
   toHie (C c (FieldOcc n (L l _))) = case hiePass @p of
-    HieTc -> toHie (C c (L l n)) -- AMG TODO: probably wrong
-    HieRn -> toHie (C c (L l n)) -- AMG TODO: probably wrong
+    HieTc -> toHie (C c (L l n))
+    HieRn -> toHie (C c (L l n))
 
 instance HiePass p => ToHie (PatSynFieldContext (RecordPatSynField (GhcPass p))) where
   toHie (PSC sp (RecordPatSynField a b)) = concatM $

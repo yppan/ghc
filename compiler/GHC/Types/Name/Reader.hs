@@ -757,10 +757,10 @@ gresToAvailInfo gres
 
         comb :: GlobalRdrElt -> AvailInfo -> AvailInfo
         comb _ (Avail n) = Avail n -- Duplicated name, should not happen
-        comb _ (AvailFL fl) = AvailFL fl -- AMG TODO: shouldn't happen either?
+        comb _ (AvailFL fl) = AvailFL fl
         comb gre (AvailTC m ns fls)
           = case (gre_par gre, gre_child gre) of
-              (NoParent, ChildName me)    -> AvailTC m (me:ns) fls -- Not sure this ever happens -- AMG TODO: AvailTC invariant?
+              (NoParent, ChildName me)    -> AvailTC m (me:ns) fls -- Not sure this ever happens
               (NoParent, ChildField fl)   -> AvailTC m ns (fl:fls)
               (ParentIs {}, ChildName me) -> AvailTC m (insertChildIntoChildren m ns me) fls
               (ParentIs {}, ChildField fl) -> AvailTC m ns (fl:fls)
