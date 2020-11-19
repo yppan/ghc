@@ -615,11 +615,11 @@ checkPatSynParent parent NoParent child
        ; case mpat_syn_thing of
             AnId i | isId i
                    , RecSelId { sel_tycon = RecSelPatSyn p } <- idDetails i
-                   -> handle_pat_syn (selErr i) parent_ty_con p
+                   -> handle_pat_syn (selErr child) parent_ty_con p
 
             AConLike (PatSynCon p) -> handle_pat_syn (psErr p) parent_ty_con p
 
-            _ -> failWithDcErr parent mpat_syn (ppr mpat_syn) [] }
+            _ -> failWithDcErr parent mpat_syn (ppr child) [] }
   where
     psErr  = exportErrCtxt "pattern synonym"
     selErr = exportErrCtxt "pattern synonym record selector"
