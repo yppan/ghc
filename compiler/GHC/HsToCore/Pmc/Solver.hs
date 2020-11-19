@@ -1234,15 +1234,12 @@ inhabitationTest fuel  old_ty_st nabla@MkNabla{ nabla_tm_st = ts } = do
 
 -- | Checks whether the given 'VarInfo' needs to be tested for inhabitants.
 --
---     1. If it already has a solution, we don't have to test.
---     2. If it's marked dirty because of new negative term constraints, we have
+--     1. If it's marked dirty because of new negative term constraints, we have
 --        to test.
---     3. Otherwise, if the type state didn't change, we don't need to test.
---     4. If the type state changed, we compare normalised source types. No need
+--     2. Otherwise, if the type state didn't change, we don't need to test.
+--     3. If the type state changed, we compare normalised source types. No need
 --        to test if unchanged.
 varNeedsTesting :: TyState -> Nabla -> VarInfo -> DsM Bool
-varNeedsTesting _         _                              vi
-  | notNull (vi_pos vi)                     = pure False
 varNeedsTesting _         MkNabla{nabla_tm_st=tm_st}     vi
   | elemDVarSet (vi_id vi) (ts_dirty tm_st) = pure True
 varNeedsTesting old_ty_st MkNabla{nabla_ty_st=new_ty_st} _
