@@ -1635,8 +1635,8 @@ getMinimalImports = fmap combine . mapM mk_minimal
     -- to say "T(A,B,C)".  So we have to find out what the module exports.
     to_ie _ (Avail n)
        = [IEVar noExtField (to_ie_post_rn $ noLoc n)]
-    to_ie _ (AvailFL fl)
-       = [IEVar noExtField (to_ie_post_rn $ noLoc (flSelector fl))] -- AMG TODO Probably wrong
+    to_ie _ (AvailFL fl) -- Note [Overloaded field import]
+       = [IEVar noExtField (to_ie_post_rn $ noLoc (fieldLabelPrintableName fl))]
     to_ie _ (AvailTC n [m] [])
        | n==m = [IEThingAbs noExtField (to_ie_post_rn $ noLoc n)]
     to_ie iface (AvailTC n ns fs)
@@ -1761,6 +1761,23 @@ then the minimal import for module B must be
     import A ( T(foo) )
 because when DuplicateRecordFields is enabled, field selectors are
 not in scope without their enclosing datatype.
+
+On the third hand, if we have
+
+    {-# LANGUAGE DuplicateRecordFields #-}
+    module A where
+      pattern MkT { foo } = Just foo
+
+    module B where
+      import A
+      f = ...foo...
+
+then the minimal import for module B must be
+    import A ( foo )
+because foo doesn't have a parent.  This might actually be ambiguous if A
+exports another field called foo, but there is no good answer to return and this
+is a very obscure corner, so it seems to be the best we can do.  See
+DRFPatSynExport for a test of this.
 
 
 ************************************************************************
