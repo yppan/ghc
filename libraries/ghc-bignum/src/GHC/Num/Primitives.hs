@@ -334,7 +334,7 @@ wordToAddrLE# x addr = go x 0#
          = (# s, int2Word# c #)
 
          | True
-         = case writeWord8OffAddr# addr c (narrowWord8# w) s of
+         = case writeWord8OffAddr# addr c (wordToWord8# w) s of
             s' -> go (w `uncheckedShiftRL#` 8#) (c +# 1#) s'
 
 -- | Write a Word to @/addr/@ in base-256 big-endian representation and
@@ -349,7 +349,7 @@ wordToAddrBE# w addr = go 0# (WORD_SIZE_IN_BITS# -# clz)
       = (# s, int2Word# c #)
 
       | True
-      , w' <- narrowWord8# (w `uncheckedShiftRL#` (sh -# 8#))
+      , w' <- wordToWord8# (w `uncheckedShiftRL#` (sh -# 8#))
       = case writeWord8OffAddr# addr c w' s of
          s' -> go (c +# 1#) (sh -# 8#) s'
 
@@ -459,7 +459,7 @@ wordToMutableByteArrayLE# x mba off = go x 0#
          = (# s, int2Word# c #)
 
          | True
-         = case writeWord8Array# mba (word2Int# off +# c) (narrowWord8# w) s of
+         = case writeWord8Array# mba (word2Int# off +# c) (wordToWord8# w) s of
             s' -> go (w `uncheckedShiftRL#` 8#) (c +# 1#) s'
 
 -- | Write a Word to @/MutableByteArray/@ in base-256 big-endian representation and
@@ -476,7 +476,7 @@ wordToMutableByteArrayBE# w mba off = go 0# (WORD_SIZE_IN_BITS# -# clz)
       = (# s, int2Word# c #)
 
       | True
-      , w' <- narrowWord8# (w `uncheckedShiftRL#` (sh -# 8#))
+      , w' <- wordToWord8# (w `uncheckedShiftRL#` (sh -# 8#))
       = case writeWord8Array# mba (word2Int# off +# c) w' s of
          s' -> go (c +# 1#) (sh -# 8#) s'
 

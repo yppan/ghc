@@ -269,7 +269,7 @@ utf8EncodeChar write# c =
   where
     {-# INLINE write #-}
     write (I# off#) (W# c#) = ST $ \s ->
-      case write# off# (narrowWord8# c#) s of
+      case write# off# (wordToWord8# c#) s of
         s -> (# s, () #)
 
 utf8EncodeString :: Ptr Word8 -> String -> IO ()
