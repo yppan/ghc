@@ -254,7 +254,7 @@ rnAvailInfo (AvailTC n ns) = do
                          n' <- setNameModule (Just (childModule rep)) n
                          return (AvailTC n' ns')
   where
-    childModule = nameModule . greNameInternal
+    childModule = nameModule . greNameMangledName
 
 rnGreName :: Rename GreName
 rnGreName (NormalGreName n) = NormalGreName <$> rnIfaceGlobal n
