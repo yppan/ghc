@@ -26,7 +26,7 @@ module GHC.Core.Unfold (
         UnfoldingOpts (..), defaultUnfoldingOpts,
         updateCreationThreshold, updateUseThreshold,
         updateFunAppDiscount, updateDictDiscount,
-        updateVeryAggressive,
+        updateVeryAggressive, updateCaseScaling, updateCaseThreshold,
 
         ArgSummary(..),
 
@@ -82,6 +82,12 @@ data UnfoldingOpts = UnfoldingOpts
 
    , unfoldingVeryAggressive :: !Bool
       -- ^ Force inlining in many more cases
+
+      -- Don't consider depth up to x
+   , unfoldingCaseThreshold :: !Int
+
+      -- Penalize depth with 1/x
+   , unfoldingCaseScaling :: !Int
    }
 
 defaultUnfoldingOpts :: UnfoldingOpts
@@ -106,6 +112,12 @@ defaultUnfoldingOpts = UnfoldingOpts
       -- we'll be able to pick the right method from a dictionary
 
    , unfoldingVeryAggressive = False
+
+         -- Don't consider depth up to x
+   , unfoldingCaseThreshold = 4
+
+      -- Penalize depth with 1/x
+   , unfoldingCaseScaling = 2
    }
 
 -- Helpers for "GHC.Driver.Session"
@@ -124,6 +136,13 @@ updateDictDiscount n opts = opts { unfoldingDictDiscount = n }
 
 updateVeryAggressive :: Bool -> UnfoldingOpts -> UnfoldingOpts
 updateVeryAggressive n opts = opts { unfoldingVeryAggressive = n }
+
+
+updateCaseThreshold :: Int -> UnfoldingOpts -> UnfoldingOpts
+updateCaseThreshold n opts = opts { unfoldingCaseThreshold = n }
+
+updateCaseScaling :: Int -> UnfoldingOpts -> UnfoldingOpts
+updateCaseScaling n opts = opts { unfoldingCaseScaling = n }
 
 {-
 Note [Occurrence analysis of unfoldings]
@@ -1111,6 +1130,27 @@ traceInline dflags inline_id str doc result
       = False
 {-# INLINE traceInline #-} -- see Note [INLINE conditional tracing utilities]
 
+{- Note [Avoid inlining into deeply nested cases]
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+TODO:
+
+
+The heuristic we use has two parts:
+
+* Up to a certain level of nesting we don't consider
+  nesting of cases at all for inlining decisions.
+* Past a certain level of nesting we modify the inlining
+  cost by making the expression seem larger. The exact size
+  is both dependent on the original size and how many alternatives
+  deep we are inlining into.
+
+
+
+
+
+-}
+
 tryUnfolding :: DynFlags -> Int -> Id -> Bool -> [ArgSummary] -> CallCtxt
              -> CoreExpr -> Bool -> Bool -> UnfoldingGuidance
              -> Maybe CoreExpr
@@ -1140,12 +1180,15 @@ tryUnfolding dflags case_depth id lone_variable
         where
           some_benefit = calc_some_benefit (length arg_discounts)
           extra_doc = vcat [ text "case depth =" <+> int case_depth
-                           , text "inflated size =" <+> int inflated_size
-                           , text "discounted size =" <+> int discounted_size ]
-          inflated_size | case_depth <= 2 = size
-                        | otherwise       = size * (case_depth - 1)
-          discounted_size = inflated_size - discount
-          small_enough = discounted_size <= unfoldingUseThreshold uf_opts
+                           , text "depth penalty size =" <+> int depth_penalty
+                           , text "discounted size =" <+> int adjusted_size ]
+          depth_treshold = unfoldingCaseThreshold uf_opts
+          depth_scaling = unfoldingCaseScaling uf_opts
+
+          depth_penalty | case_depth <= depth_treshold = 0
+                        | otherwise       = (size * (case_depth - depth_treshold)) `div` depth_scaling
+          adjusted_size = size + depth_penalty - discount
+          small_enough = adjusted_size <= unfoldingUseThreshold uf_opts
           discount = computeDiscount arg_discounts res_discount arg_infos cont_info
 
   where
