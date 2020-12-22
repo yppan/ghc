@@ -113,11 +113,12 @@ defaultUnfoldingOpts = UnfoldingOpts
 
    , unfoldingVeryAggressive = False
 
-         -- Don't consider depth up to x
-   , unfoldingCaseThreshold = 4
+      -- Only apply scaling once we are deeper than threshold cases
+      -- in an RHS.
+   , unfoldingCaseThreshold = 1
 
-      -- Penalize depth with 1/x
-   , unfoldingCaseScaling = 2
+      -- Penalize depth with (size*depth)/scaling
+   , unfoldingCaseScaling = 25
    }
 
 -- Helpers for "GHC.Driver.Session"
