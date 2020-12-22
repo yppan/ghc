@@ -896,9 +896,12 @@ available, and filters it through the import spec (if any).
 Note [Dealing with imports]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 For import M( ies ), we take the mi_exports of M, and make
-   imp_occ_env :: OccEnv (Name, AvailInfo, Maybe Name)
-One entry for each Name that M exports; the AvailInfo is the
-AvailInfo exported from M that exports that Name.
+   imp_occ_env :: OccEnv (NameEnv (GreName, AvailInfo, Maybe Name))
+One entry for each OccName that M exports, mapping each corresponding Name to
+its GreName, the AvailInfo exported from M that exports that Name, and
+optionally a Name for an associated type's parent class. (Typically there will
+be a single Name in the NameEnv, but see Note [Importing DuplicateRecordFields]
+for why we may need more than one.)
 
 The situation is made more complicated by associated types. E.g.
    module M where
@@ -910,7 +913,7 @@ Then M's export_avails are (recall the AvailTC invariant from Avails.hs)
 Notice that T appears *twice*, once as a child and once as a parent. From
 this list we construct a raw list including
    T -> (T, T( T1, T2, T3 ), Nothing)
-   T -> (C, C( C, T ),       Nothing)
+   T -> (T, C( C, T ),       Nothing)
 and we combine these (in function 'combine' in 'imp_occ_env' in
 'filterImports') to get
    T  -> (T,  T(T,T1,T2,T3), Just C)
@@ -926,6 +929,57 @@ then we get *two* Avails:  C(T), T(T1,T2)
 
 Note that the imp_occ_env will have entries for data constructors too,
 although we never look up data constructors.
+
+Note [Importing PatternSynonyms]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+As described in Note [Dealing with imports], associated types can lead to the
+same Name appearing twice, both as a child and once as a parent, when
+constructing the imp_occ_env.  The same thing can happen with pattern synonyms
+if they are exported bundled with a type.
+
+A simplified example, based on #11959:
+
+  {-# LANGUAGE PatternSynonyms #-}
+  module M (T(P), pattern P) where  -- Duplicate export warning, but allowed
+    data T = MkT
+    pattern P = MkT
+
+Here we have T(P) and P in export_avails, and construct both
+  P -> (P, P, Nothing)
+  P -> (P, T(P), Nothing)
+which are 'combine'd to leave
+  P -> (P, T(P), Nothing)
+i.e. we simply discard the non-bundled Avail.
+
+Note [Importing DuplicateRecordFields]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In filterImports, another complicating factor is DuplicateRecordFields.
+Suppose we have:
+
+  {-# LANGUAGE DuplicateRecordFields #-}
+  module M (S(foo), T(foo)) where
+    data S = MkS { foo :: Int }
+    data T = mkT { foo :: Int }
+
+  module N where
+    import M (foo)    -- this is an ambiguity error (A)
+    import M (S(foo)) -- this is allowed (B)
+
+Here M exports the OccName 'foo' twice, so we get an imp_occ_env where 'foo'
+maps to a NameEnv containing an entry for each of the two mangled field selector
+names (see Note [FieldLabel] in GHC.Types.FieldLabel).
+
+  foo -> [ $sel:foo:MkS -> (foo, S(foo), Nothing)
+         , $sel:foo:MKT -> (foo, T(foo), Nothing)
+         ]
+
+Then when we look up 'foo' in lookup_name for case (A) we get both entries and
+hence report an ambiguity error.  Whereas in case (B) we reach the lookup_ie
+case for IEThingWith, which looks up 'S' and then finds the unique 'foo' amongst
+its children.
+
+See T16745 for a test of this.
+
 -}
 
 filterImports
@@ -974,19 +1028,20 @@ filterImports iface decl_spec (Just (want_hiding, L l import_items))
     -- twice in the all_avails. In the example, we combine
     --    T(T,T1,T2,T3) and C(C,T)  to give   (T, T(T,T1,T2,T3), Just C)
     -- NB: the AvailTC can have fields as well as data constructors (#12127)
-    --
-    -- 'combine' may also be called for pattern synonyms which appear both
-    -- unassociated and associated (#11959)
-    combine :: (GreName, AvailInfo, Maybe Name) -> (GreName, AvailInfo, Maybe Name) -> (GreName, AvailInfo, Maybe Name)
+    combine :: (GreName, AvailInfo, Maybe Name)
+            -> (GreName, AvailInfo, Maybe Name)
+            -> (GreName, AvailInfo, Maybe Name)
     combine (NormalGreName name1, a1@(AvailTC p1 _), mb1)
             (NormalGreName name2, a2@(AvailTC p2 _), mb2)
       = ASSERT2( name1 == name2 && isNothing mb1 && isNothing mb2
                , ppr name1 <+> ppr name2 <+> ppr mb1 <+> ppr mb2 )
         if p1 == name1 then (NormalGreName name1, a1, Just p2)
                        else (NormalGreName name1, a2, Just p1)
-    combine (c1, a1, mb1)
-            (c2, a2, mb2)
-      = ASSERT2( c1 == c2 && isNothing mb1 && isNothing mb2 && (isAvailTC a1 || isAvailTC a2)
+    -- 'combine' may also be called for pattern synonyms which appear both
+    -- unassociated and associated (see Note [Importing PatternSynonyms]).
+    combine (c1, a1, mb1) (c2, a2, mb2)
+      = ASSERT2( c1 == c2 && isNothing mb1 && isNothing mb2
+                          && (isAvailTC a1 || isAvailTC a2)
                , ppr c1 <+> ppr c2 <+> ppr a1 <+> ppr a2 <+> ppr mb1 <+> ppr mb2 )
         if isAvailTC a1 then (c1, a1, Nothing)
                         else (c1, a2, Nothing)
@@ -998,6 +1053,7 @@ filterImports iface decl_spec (Just (want_hiding, L l import_items))
     lookup_name ie rdr
        | isQual rdr              = failLookupWith (QualImportError rdr)
        | Just succ <- mb_success = case nameEnvElts succ of
+                                     -- See Note [Importing DuplicateRecordFields]
                                      [(c,a,x)] -> return (greNameMangledName c, a, x)
                                      xs -> failLookupWith (AmbiguousImport rdr (map sndOf3 xs))
        | otherwise               = failLookupWith (BadImport ie)
@@ -1097,6 +1153,7 @@ filterImports iface decl_spec (Just (want_hiding, L l import_items))
                <- lookup_name (IEThingAbs noExtField ltc) (ieWrappedName rdr_tc)
 
            -- Look up the children in the sub-names of the parent
+           -- See Note [Importing DuplicateRecordFields]
            let subnames = availSubordinateGreNames avail
            case lookupChildren subnames rdr_ns of
 
