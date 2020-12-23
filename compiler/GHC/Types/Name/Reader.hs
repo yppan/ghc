@@ -590,6 +590,10 @@ are identical for normal names, but for record fields compiled with
  * The "printable" Name is the "manged" Name with its OccName replaced with that
    of the field label.  This is how the field should be output to the user.
 
+Since the right Name to use is context-dependent, we do not define a NamedThing
+instance for GREName (or GlobalRdrElt), but instead make the choice explicit
+with the greMangledName or grePrintableName functions.
+
 Pattern synonym constructors and record fields are unusual: their parent
 information is NoParent in the module in which they are defined.  However, a
 pattern synonym can be bundled with a type constructor on export, in which case
