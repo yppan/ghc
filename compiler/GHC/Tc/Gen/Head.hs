@@ -597,9 +597,8 @@ tyConOfET fam_inst_envs ty0 = tyConOf fam_inst_envs =<< checkingExpType_maybe ty
 lookupParents :: FieldsOrSelectors -> RdrName -> RnM [(RecSelParent, GlobalRdrElt)]
 lookupParents fos rdr
   = do { env <- getGlobalRdrEnv
-        -- filter by isRecFldGRE because otherwise a non-selector variable with an overlapping name can get through
-        -- when NoFieldSelector is enabled
-        -- AMG TODO check this, seems implausible
+        -- filter by isRecFldGRE because otherwise a non-selector variable with
+        -- an overlapping name can get through when NoFieldSelector is enabled
        ; let gres = filter isRecFldGRE $ lookupGRE_RdrName' fos rdr env
        ; mapM lookupParent gres }
   where
